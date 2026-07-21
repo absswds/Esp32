@@ -10,9 +10,6 @@
 #define TEC_LPWM 25  // 制冷
 #define TEC_RPWM 26  // 加热
 
-#define FAN_CH 0
-#define TEC_L_CH 1
-#define TEC_R_CH 2
 #define PWM_FREQ 25000
 #define PWM_RES 8
 
@@ -22,8 +19,8 @@ WebServer server(80);
 float t = NAN, h = NAN, p = NAN, g = NAN;
 int aqi = 0;
 int fanSpeed = 0;
-float coolStop = 26.0;  // ≤此温度停止制冷
-float heatStop = 28.0;   // ≥此温度停止加热
+float coolStop = 26.0;
+float heatStop = 28.0;
 unsigned long lastRead = 0;
 
 bool systemOn = false;
@@ -36,14 +33,15 @@ const float SAFE_MAX = 40.0;
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
-  ledcWrite(FAN_CH, fanSpeed);
+  ledcWrite(FAN_PIN, fanSpeed);
 }
 
 void setTec(int cool, int heat) {
   cooling = cool > 0;
   heating = heat > 0;
-  ledcWrite(TEC_L_CH, cool);
-  ledcWrite(TEC_R_CH, heat);
+  ledcWrite(TEC_LPWM, cool);
+  ledcWrite(TEC_RPWM, heat);
+  Serial.printf("TEC: L=%d R=%d EN=%d\n", cool, heat, digitalRead(TEC_EN));
 }
 
 void stopAll() {
@@ -55,12 +53,12 @@ void stopAll() {
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
   setFan(100);
+  Serial.println("System ON");
 }
 
 void controlTemp() {
   if (!systemOn || isnan(t)) return;
 
-  // 安全保护：极端温度强制停 TEC
   if (t < SAFE_MIN || t > SAFE_MAX) {
     setTec(0, 0);
     setFan(t > SAFE_MAX ? 255 : 60);
@@ -68,15 +66,12 @@ void controlTemp() {
     return;
   }
 
-  // 温度太高 → 制冷；温度太低 → 加热
   if (t >= heatStop) {
-    int power = 220;
-    setTec(power, 0);
+    setTec(220, 0);
     setFan(255);
   } else if (t <= coolStop) {
-    int power = 200;
-    setTec(0, power);
-    setFan(map(power, 0, 255, 100, 200));
+    setTec(0, 200);
+    setFan(150);
   } else {
     setTec(0, 0);
     setFan(100);
@@ -133,14 +128,35 @@ void handleControl() {
   }
   if (server.hasArg("coolStop")) {
     float v = server.arg("coolStop").toFloat();
-    coolStop = constrain(v, SAFE_MIN, heatStop - 0.5);  // 强制 coolStop < heatStop，保留死区
+    coolStop = constrain(v, SAFE_MIN, heatStop - 0.5);
   }
   if (server.hasArg("heatStop")) {
     float v = server.arg("heatStop").toFloat();
-    heatStop = constrain(v, coolStop + 0.5, SAFE_MAX);  // 强制 heatStop > coolStop
+    heatStop = constrain(v, coolStop + 0.5, SAFE_MAX);
   }
   controlTemp();
   server.send(200, "text/plain", "OK");
+}
+
+// 硬件测试端点: /test?fan=128&cool=200&heat=0&en=1
+void handleTest() {
+  int fanVal = server.hasArg("fan") ? server.arg("fan").toInt() : -1;
+  int coolVal = server.hasArg("cool") ? server.arg("cool").toInt() : -1;
+  int heatVal = server.hasArg("heat") ? server.arg("heat").toInt() : -1;
+  int enVal = server.hasArg("en") ? server.arg("en").toInt() : -1;
+
+  if (enVal >= 0) digitalWrite(TEC_EN, enVal ? HIGH : LOW);
+  if (fanVal >= 0) setFan(fanVal);
+  if (coolVal >= 0 || heatVal >= 0) {
+    setTec(max(0, coolVal), max(0, heatVal));
+  }
+
+  char buf[128];
+  snprintf(buf, sizeof(buf), "{\"en\":%d,\"fan\":%d,\"cool\":%d,\"heat\":%d}",
+    digitalRead(TEC_EN), fanSpeed, cooling ? 220 : 0, heating ? 200 : 0);
+  server.send(200, "application/json", buf);
+  Serial.printf("TEST: EN=%d Fan=%d Cool=%d Heat=%d\n",
+    digitalRead(TEC_EN), fanSpeed, cooling, heating);
 }
 
 const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
@@ -169,6 +185,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 .btn.on{background:var(--r);color:#fff}
 .btn.off{background:var(--g);color:#000}
 .btn:active{opacity:.7}
+.btn-t{padding:8px 14px;border-radius:4px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.8rem;font-weight:500;margin-right:6px;margin-bottom:6px}
+.btn-t.on{background:var(--c);color:#000;border-color:var(--c)}
+.btn-t:active{opacity:.7}
 .sts{display:flex;gap:8px;margin-top:12px;font-size:.78rem}
 .sts .pill{flex:1;text-align:center;padding:6px;border-radius:4px;background:var(--bg);border:1px solid var(--bd)}
 .sts .pill.act{border-color:var(--c);color:var(--c)}
@@ -181,6 +200,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 .fld .val{font-size:.95rem;font-weight:700;color:var(--c);min-width:42px;text-align:right;font-variant-numeric:tabular-nums}
 .note{font-size:.72rem;color:var(--t3);line-height:1.6}
 .note b{color:var(--t2)}
+.tst{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
 </style>
 </head>
 <body>
@@ -217,13 +237,26 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   </div>
 </div>
 <div class="sec">
+  <h2>硬件測試</h2>
+  <div class="tst">
+    <button class="btn-t" onclick="tTest('fan',150)">風扇 150</button>
+    <button class="btn-t" onclick="tTest('fan',255)">風扇 255</button>
+    <button class="btn-t" onclick="tTest('fan',0)">風扇 停</button>
+    <button class="btn-t" onclick="tTest('cool',200)">製冷 200</button>
+    <button class="btn-t" onclick="tTest('heat',200)">加熱 200</button>
+    <button class="btn-t" onclick="tTest('off',0)">全部停</button>
+  </div>
+  <div class="note">
+    <p>• 點按鈕直接驅動硬件，跳過溫控邏輯</p>
+    <p>• <b>製冷/加熱不會同時開</b>，點了會先關另一邊</p>
+  </div>
+</div>
+<div class="sec">
   <h2>運行說明</h2>
   <div class="note">
     <p>• <b>溫度＞<span id="nhs">28</span>°C</b> → 製冷啟動，風扇全速</p>
     <p>• <b>溫度＜<span id="ncs">26</span>°C</b> → 加熱啟動，風扇中速</p>
     <p>• 之間為恆溫區，TEC 關閉，風扇低速循環</p>
-    <p>• 🔬 論文設定：常溫 24°C → 蟄眠 15°C → 喚醒 24°C</p>
-    <p>• 🧪 測試建議：室溫 25°C 時，設製冷 28°C 即啟動降溫</p>
     <p>• 安全保護 ＜10°C 或 ＞40°C 強制停 TEC</p>
   </div>
 </div>
@@ -264,6 +297,12 @@ function toggleSys(){
 }
 function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?coolStop='+v);}
+function tTest(type,val){
+  if(type==='fan')fetch('/test?fan='+val);
+  else if(type==='cool')fetch('/test?cool='+val+'&heat=0&en=1');
+  else if(type==='heat')fetch('/test?heat='+val+'&cool=0&en=1');
+  else fetch('/test?fan=0&cool=0&heat=0&en=0');
+}
 poll();setInterval(poll,2000);
 </script>
 </body>
@@ -276,22 +315,22 @@ void handleRoot() {
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Wire.begin();
-  Wire.setClock(100000);
-  Wire.setTimeOut(50);
 
   pinMode(TEC_EN, OUTPUT);
   digitalWrite(TEC_EN, LOW);
 
-  ledcSetup(FAN_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(FAN_PIN, FAN_CH);
-  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(TEC_LPWM, TEC_L_CH);
-  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(TEC_RPWM, TEC_R_CH);
+  // ESP32 Arduino Core 3.x API: ledcAttach(pin, freq, resolution)
+  ledcAttach(FAN_PIN, PWM_FREQ, PWM_RES);
+  ledcAttach(TEC_LPWM, PWM_FREQ, PWM_RES);
+  ledcAttach(TEC_RPWM, PWM_FREQ, PWM_RES);
 
   setFan(0);
   setTec(0, 0);
+  Serial.println("PWM OK");
+
+  Wire.begin();
+  Wire.setClock(100000);
+  Wire.setTimeOut(50);
 
   WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.print("AP IP: ");
@@ -306,13 +345,13 @@ void setup() {
     bmeOk = true;
     Serial.println("BME688 OK");
   } else {
-    bmeOk = false;
-    Serial.println("BME688 fail (check wiring, tried 0x77/0x76)");
+    Serial.println("BME688 fail");
   }
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
   server.on("/control", handleControl);
+  server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("Server started");
