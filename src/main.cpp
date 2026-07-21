@@ -169,24 +169,24 @@ td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);w
   <button onclick="setPoll(5000,this)">5s</button>
 </div></div>
 <div class="g3">
-  <div class="mc a"><div class="v cT" id="mT">--</div><div class="l">Temp C <span class="tr" id="tT"></span></div></div>
-  <div class="mc b"><div class="v cH" id="mH">--</div><div class="l">Humidity % <span class="tr" id="tH"></span></div></div>
-  <div class="mc c"><div class="v cP" id="mP">--</div><div class="l">hPa <span class="tr" id="tP"></span></div></div>
-  <div class="mc d"><div class="v cG" id="mG">--</div><div class="l">Gas kOhm <span class="tr" id="tG"></span></div></div>
+  <div class="mc a"><div class="v cT" id="mT">--</div><div class="l">溫度 °C <span class="tr" id="tT"></span></div></div>
+  <div class="mc b"><div class="v cH" id="mH">--</div><div class="l">濕度 % <span class="tr" id="tH"></span></div></div>
+  <div class="mc c"><div class="v cP" id="mP">--</div><div class="l">氣壓 hPa <span class="tr" id="tP"></span></div></div>
+  <div class="mc d"><div class="v cG" id="mG">--</div><div class="l">氣體 kΩ <span class="tr" id="tG"></span></div></div>
   <div class="mc"><div class="v" id="mA" style="color:var(--a)">--</div><div class="l">AQI</div></div>
-  <div class="mc"><div class="v" id="mF" style="color:var(--c)">--</div><div class="l">Fan</div></div>
+  <div class="mc"><div class="v" id="mF" style="color:var(--c)">--</div><div class="l">風扇</div></div>
 </div>
 <div class="sec">
-  <h2>Trend</h2>
+  <h2>趨勢圖</h2>
   <div class="lg" id="leg"></div>
   <canvas id="cvs" width="800" height="180"></canvas>
 </div>
 <div class="sec">
-  <h2>Fan Control</h2>
+  <h2>風扇控制</h2>
   <div class="fn">
-    <button class="fb on" id="ab" onclick="toggleAuto()">Auto</button>
+    <button class="fb on" id="ab" onclick="toggleAuto()">自動</button>
     <div class="fv"></div>
-    <span class="fl">Target</span>
+    <span class="fl">目標</span>
     <input type="number" id="tgt" min="10" max="40" step="0.5" value="25" onchange="setTgt(this.value)">
     <span class="fl">C</span>
     <div class="fv"></div>
@@ -195,16 +195,16 @@ td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);w
   </div>
 </div>
 <div class="sec">
-  <h2>History</h2>
-  <div class="hw"><table id="ht"><thead><tr><th>Time</th><th>Temp</th><th>Hum</th><th>hPa</th><th>Gas</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
+  <h2>歷史資料</h2>
+  <div class="hw"><table id="ht"><thead><tr><th>時間</th><th>溫度</th><th>濕度</th><th>氣壓</th><th>氣體</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
   <div style="display:flex;gap:6px">
-    <button class="gbtn" onclick="clearH()">Clear</button>
+    <button class="gbtn" onclick="clearH()">清除</button>
     <button class="gbtn" onclick="exportCSV()">導出 CSV</button>
   </div>
 </div>
 <script>
 var hist=[],am=1,pm=2000,ti=null;
-var K=['T','H','P','G'],CO={T:'#f85149',H:'#58a6ff',P:'#3fb950',G:'#d29922'},LA={T:'Temp',H:'Hum',P:'hPa',G:'Gas'};
+var K=['T','H','P','G'],CO={T:'#f85149',H:'#58a6ff',P:'#3fb950',G:'#d29922'},LA={T:'溫度',H:'濕度',P:'氣壓',G:'氣體'};
 var vs={T:1,H:1,P:0,G:0};
 var cv=document.getElementById('cvs'),cx=cv.getContext('2d');
 var pv={T:null,H:null,P:null,G:null};
@@ -218,10 +218,10 @@ function dr(){
   var W=cv.getBoundingClientRect().width,H=cv.getBoundingClientRect().height;
   var pl=48,pr=14,pt=14,pb=24;
   cx.clearRect(0,0,W,H);
-  if(hist.length<2){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('Collecting data...',W/2,H/2);return;}
+  if(hist.length<2){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('等待資料累積...',W/2,H/2);return;}
   var us=hist.slice().reverse();
   var ac=K.filter(function(k){return vs[k];});
-  if(!ac.length){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('Select a metric',W/2,H/2);return;}
+  if(!ac.length){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('請勾選項目',W/2,H/2);return;}
   var mn=Infinity,mx=-Infinity;
   ac.forEach(function(k){us.forEach(function(r){if(r[k]<mn)mn=r[k];if(r[k]>mx)mx=r[k];});});
   var sp=mx-mn;if(sp===0){mn-=1;mx+=1;sp=2;}
@@ -276,7 +276,7 @@ async function poll(){
     if(hist.length>60)hist.pop();
     rH();dr();
   }catch(e){
-    document.getElementById('st').textContent='Error';
+    document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
   }
 }
@@ -289,7 +289,7 @@ function setMan(v){if(am)return;document.getElementById('fp').textContent=v+'%';
 function clearH(){hist=[];rH();dr();}
 function exportCSV(){
   if(!hist.length)return;
-  var c='\uFEFFTime,Temp,Hum,hPa,Gas,AQI\n'+hist.map(function(r){return r.time+','+r.T+','+r.H+','+r.P+','+r.G+','+r.A;}).join('\n');
+  var c='\uFEFF時間,溫度,濕度,氣壓,氣體,AQI\n'+hist.map(function(r){return r.time+','+r.T+','+r.H+','+r.P+','+r.G+','+r.A;}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='BME688.csv';a.click();
 }
 bld();rs();go();
