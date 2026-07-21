@@ -271,12 +271,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>溫度閾值</h2>
   <div class="fld">
     <label>高溫製冷</label>
-    <input type="range" min="15" max="35" step="0.5" value="28" id="hs" oninput="setHS(this.value)">
+    <input type="range" min="15" max="35" step="0.1" value="28" id="hs" oninput="setHS(this.value)">
     <span class="rv" id="hsv">28</span>
   </div>
   <div class="fld">
     <label>低溫加熱</label>
-    <input type="range" min="10" max="30" step="0.5" value="26" id="cs" oninput="setCS(this.value)">
+    <input type="range" min="10" max="30" step="0.1" value="26" id="cs" oninput="setCS(this.value)">
     <span class="rv" id="csvv">26</span>
   </div>
   <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜<span id="nmin">10</span>°C / ＞<span id="nmax">40</span>°C</div>
