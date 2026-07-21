@@ -50,13 +50,13 @@ void stopAll() {
   setFan(0);
   setTec(0, 0);
   digitalWrite(TEC_EN, LOW);
-  Serial.println("[SYS] stop");
+  Serial.printf("[SYS] 停止");
 }
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
   setFan(100);
-  Serial.println("[SYS] start");
+  Serial.println("[SYS] 啟動");
 }
 
 void controlTemp() {
@@ -64,7 +64,7 @@ void controlTemp() {
   if (t < SAFE_MIN || t > SAFE_MAX) {
     setTec(0, 0);
     setFan(t > SAFE_MAX ? 255 : 60);
-    Serial.println("[SAFE] extreme temp");
+    Serial.println("[SAFE] 極端溫度");
     return;
   }
   if (t >= heatStop) {
@@ -91,7 +91,7 @@ int calcAqi(float gas) {
 void readSensor() {
   if (!bmeOk) return;
   if (!bme.performReading()) {
-    Serial.println("[BME688] read fail");
+    Serial.println("[BME688] 讀取失敗");
     bmeOk = false;
     return;
   }
@@ -115,8 +115,8 @@ void sendJson(const char* msg) {
 }
 
 void handleData() {
-  if (!bmeOk) { sendJson("BME688 not found"); return; }
-  if (isnan(t)) { sendJson("waiting..."); return; }
+  if (!bmeOk) { sendJson("BME688 未連線"); return; }
+  if (isnan(t)) { sendJson("等待感測資料..."); return; }
   char buf[320];
   snprintf(buf, sizeof(buf),
     "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f}",
@@ -213,63 +213,72 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </head>
 <body>
 <div class="hdr">
-  <h1><b>TEC</b> Temp Control</h1>
+  <h1><b>TEC</b> 溫控系統</h1>
   <div class="conn"><span class="dot" id="dot"></span><span id="st">...</span></div>
 </div>
 <div class="grid">
-  <div class="card cr"><div class="val" id="mT">--</div><div class="lbl">Temp C</div></div>
-  <div class="card cb"><div class="val" id="mH">--</div><div class="lbl">Humid %</div></div>
-  <div class="card cg"><div class="val" id="mP">--</div><div class="lbl">hPa</div></div>
-  <div class="card ca"><div class="val" id="mA">--</div><div class="lbl">AQI</div></div>
+  <div class="card cr"><div class="val" id="mT">--</div><div class="lbl">溫度 °C</div></div>
+  <div class="card cb"><div class="val" id="mH">--</div><div class="lbl">濕度 %</div></div>
+  <div class="card cg"><div class="val" id="mP">--</div><div class="lbl">氣壓 hPa</div></div>
+  <div class="card ca"><div class="val" id="mA">--</div><div class="lbl">空氣 AQI</div></div>
 </div>
 <div class="sec">
-  <h2>Trend</h2>
+  <h2>溫度趨勢</h2>
   <canvas id="chart"></canvas>
   <div class="act-row">
-    <button class="act-btn" onclick="exportCSV()">Export CSV</button>
-    <button class="act-btn" onclick="clearHist()">Clear</button>
+    <button class="act-btn" onclick="exportCSV()">導出 CSV</button>
+    <button class="act-btn" onclick="clearHist()">清除記錄</button>
   </div>
 </div>
 <div class="sec">
-  <h2>Control</h2>
-  <button class="btn off" id="sysBtn" onclick="toggleSys()">START</button>
+  <h2>系統控制</h2>
+  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
   <div class="pills">
-    <div class="pill sys" id="pSys">IDLE</div>
-    <div class="pill cold" id="pCool" onclick="tTest('cool',220)">COOL</div>
-    <div class="pill hot" id="pHeat" onclick="tTest('heat',220)">HEAT</div>
+    <div class="pill sys" id="pSys">待機</div>
+    <div class="pill cold" id="pCool" onclick="tTest('cool',220)">製冷</div>
+    <div class="pill hot" id="pHeat" onclick="tTest('heat',220)">加熱</div>
   </div>
 </div>
 <div class="sec">
-  <h2>Thresholds</h2>
+  <h2>溫度閾值</h2>
   <div class="fld">
-    <label>Cool above</label>
+    <label>高溫製冷</label>
     <input type="range" min="15" max="35" step="1" value="28" id="hs" oninput="setHS(this.value)">
     <span class="rv" id="hsv">28</span>
   </div>
   <div class="fld">
-    <label>Heat below</label>
+    <label>低溫加熱</label>
     <input type="range" min="10" max="30" step="1" value="26" id="cs" oninput="setCS(this.value)">
     <span class="rv" id="csvv">26</span>
   </div>
-  <div class="info"><b>Cool</b>: &gt;<span id="nhs">28</span>C | <b>Heat</b>: &lt;<span id="ncs">26</span>C | Safe: &lt;10 / &gt;40</div>
+  <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜10 / ＞40</div>
 </div>
 <div class="sec">
-  <h2>Fan</h2>
+  <h2>風速控制</h2>
   <div class="fld">
-    <label>Speed</label>
+    <label>手動風速</label>
     <input type="range" min="0" max="255" step="5" value="0" id="fanS" oninput="setFanM(this.value)">
     <span class="rv" id="fanV">0</span>
   </div>
 </div>
+<div class="sec">
+  <h2>更新頻率</h2>
+  <div class="fld">
+    <label>間隔秒數</label>
+    <input type="range" min="1" max="10" step="1" value="2" id="pollS" oninput="setPoll(this.value)">
+    <span class="rv" id="pollV">2s</span>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=120,cv=document.getElementById('chart'),cx=cv.getContext('2d');
+var H=[],M=120,ms=2000,pi=null;
+var cv=document.getElementById('chart'),cx=cv.getContext('2d');
 function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dC();}
 window.addEventListener('resize',rs);
 function dC(){
   var W=cv.getBoundingClientRect().width,HH=cv.getBoundingClientRect().height,pl=38,pr=8,pt=10,pb=18;
   cx.clearRect(0,0,W,HH);
-  if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('waiting...',W/2,HH/2);return;}
+  if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待資料...',W/2,HH/2);return;}
   var mn=1e9,mx=-1e9;H.forEach(function(r){if(r.t<mn)mn=r.t;if(r.t>mx)mx=r.t;});
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
@@ -292,13 +301,13 @@ function dC(){
 rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
-  if(!H.length){toast('No data');return;}
-  var c='\uFEFFTime,Temp(C)\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2);}).join('\n');
+  if(!H.length){toast('無資料');return;}
+  var c='\uFEFF時間,溫度(°C)\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2);}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
-  toast('Exported '+H.length+' rows');
+  toast('已導出 '+H.length+' 筆資料');
 }
-function clearHist(){H=[];rs();toast('Cleared');}
-async function poll(){
+function clearHist(){H=[];rs();toast('記錄已清除');}
+async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
@@ -309,8 +318,8 @@ async function poll(){
     document.getElementById('mP').textContent=d.pressure.toFixed(1);
     document.getElementById('mA').textContent=d.aqi;
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
-    document.getElementById('sysBtn').textContent=d.systemOn?'STOP':'START';
-    var ps=d.systemOn?(d.cooling?'COOLING':d.heating?'HEATING':'RUNNING'):'IDLE';
+    document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
+    var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'運轉中'):'待機';
     document.getElementById('pSys').textContent=ps;
     document.getElementById('pSys').className='pill sys'+(d.systemOn?' act':'');
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
@@ -327,7 +336,7 @@ async function poll(){
     if(H.length>M)H.shift();
     dC();
   }catch(e){
-    document.getElementById('st').textContent='error';
+    document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
   }
 }
@@ -339,10 +348,12 @@ async function tTest(type,val){
   try{
     var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
     var r=await fetch(url),d=await r.json();
-    if(d.ok)toast(type==='cool'?(d.cooling==='true'?'Cool ON':'Cool OFF'):(d.heating==='true'?'Heat ON':'Heat OFF'));
-  }catch(e){toast('fail');}
+    if(d.ok)toast(type==='cool'?(d.cooling==='true'?'製冷已開':'製冷已關'):(d.heating==='true'?'加熱已開':'加熱已關'));
+  }catch(e){toast('操作失敗');}
 }
-poll();setInterval(poll,2000);
+function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
+function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
+poll();
 </script>
 </body>
 </html>)HTML";
@@ -388,7 +399,7 @@ void setup() {
     bmeOk = true;
     Serial.printf("[BME688] OK @ 0x%02X\n", bmeAddr);
   } else {
-    Serial.println("[BME688] not found");
+    Serial.println("[BME688] 未找到");
   }
 
   server.on("/", handleRoot);
@@ -397,7 +408,7 @@ void setup() {
   server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
-  Serial.println("[Server] OK");
+  Serial.println("[Server] 啟動完成");
 }
 
 void loop() {
