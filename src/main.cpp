@@ -40,6 +40,8 @@ float rampWidth = 3.0;
 // --- Sensor recovery ---
 int sensorFailCount = 0;
 unsigned long lastSensorReinit = 0;
+bool sensorReadingStarted = false;
+unsigned long sensorReadStart = 0;
 
 void setFanSpeed(int speed) {
   speed = constrain(speed, 0, 255);
@@ -577,7 +579,10 @@ chartCanvas.addEventListener('mouseleave',()=>tooltipEl.classList.remove('show')
 
 async function loadData(){
   try{
-    const res=await fetch('/data');
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),3000);
+    const res=await fetch('/data',{signal:ctrl.signal});
+    clearTimeout(tid);
     const data=await res.json();
     if(data.ok){
       statusDot.className='status-dot';
@@ -707,19 +712,19 @@ int calcAqi(float gasKOhm) {
   return map((int)gasKOhm, 0, 100, 500, 301);
 }
 
-void readSensor() {
+void readSensorStart() {
   if (!bmeDetected) return;
+  if (sensorReadingStarted) return;
 
-  // Skip if too many failures - reinit after 30 seconds
   if (sensorFailCount >= 5) {
     if (millis() - lastSensorReinit < 30000) return;
     Serial.println("嘗試重新初始化 BME688...");
     if (bme.begin(bmeAddress)) {
-      bme.setTemperatureOversampling(BME680_OS_8X);
-      bme.setHumidityOversampling(BME680_OS_2X);
-      bme.setPressureOversampling(BME680_OS_4X);
-      bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-      bme.setGasHeater(320, 150);
+      bme.setTemperatureOversampling(BME680_OS_2X);
+      bme.setHumidityOversampling(BME680_OS_1X);
+      bme.setPressureOversampling(BME680_OS_2X);
+      bme.setIIRFilterSize(BME680_FILTER_SIZE_1);
+      bme.setGasHeater(320, 100);
       sensorFailCount = 0;
       Serial.println("BME688 重新初始化成功");
     } else {
@@ -729,7 +734,17 @@ void readSensor() {
     }
   }
 
-  if (!bme.performReading()) {
+  bme.beginReading();
+  sensorReadingStarted = true;
+  sensorReadStart = millis();
+}
+
+void readSensorFinish() {
+  if (!sensorReadingStarted) return;
+  if (millis() - sensorReadStart < 200) return;
+
+  if (!bme.endReading()) {
+    sensorReadingStarted = false;
     sensorFailCount++;
     Serial.printf("BME688 讀取失敗 (%d/5)\n", sensorFailCount);
     if (sensorFailCount >= 5) {
@@ -739,6 +754,7 @@ void readSensor() {
     return;
   }
 
+  sensorReadingStarted = false;
   sensorFailCount = 0;
   temperatureC = bme.temperature;
   humidity = bme.humidity;
@@ -808,8 +824,9 @@ void setup() {
 void loop() {
   server.handleClient();
   unsigned long now = millis();
+  readSensorFinish();
   if (now - lastRead >= 2000) {
     lastRead = now;
-    readSensor();
+    readSensorStart();
   }
 }
