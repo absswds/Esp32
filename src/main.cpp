@@ -7,12 +7,10 @@
 
 #define FAN_PIN 18
 #define TEC_EN 19
-#define TEC_LPWM 25  // 制冷
-#define TEC_RPWM 26  // 加热
-
+#define TEC_LPWM 25
+#define TEC_RPWM 26
 #define PWM_FREQ 25000
 #define PWM_RES 8
-
 #define FAN_CH 0
 #define TEC_L_CH 1
 #define TEC_R_CH 2
@@ -52,25 +50,23 @@ void stopAll() {
   setFan(0);
   setTec(0, 0);
   digitalWrite(TEC_EN, LOW);
-  Serial.println("[SYS] 停止: TEC=OFF Fan=OFF");
+  Serial.println("[SYS] 停止");
 }
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
   setFan(100);
-  Serial.printf("[SYS] 啟動: EN=ON Fan=100\n");
+  Serial.println("[SYS] 啟動");
 }
 
 void controlTemp() {
   if (!systemOn || isnan(t)) return;
-
   if (t < SAFE_MIN || t > SAFE_MAX) {
     setTec(0, 0);
     setFan(t > SAFE_MAX ? 255 : 60);
-    Serial.println("SAFE: extreme temp, TEC disabled");
+    Serial.println("[SAFE] 極端溫度，TEC 停");
     return;
   }
-
   if (t >= heatStop) {
     setTec(220, 0);
     setFan(255);
@@ -99,7 +95,7 @@ void readSensor() {
     return;
   }
   if (!bme.performReading()) {
-    Serial.println("[BME688] 讀取失敗，停止感測");
+    Serial.println("[BME688] 讀取失敗");
     bmeOk = false;
     return;
   }
@@ -109,8 +105,8 @@ void readSensor() {
   g = bme.gas_resistance / 1000.0;
   aqi = calcAqi(g);
   controlTemp();
-  Serial.printf("[SENSOR] T:%.1f H:%.1f P:%.1f AQI:%d | SYS:%s %s | Fan:%d EN:%d\n",
-                t, h, p, aqi,
+  Serial.printf("[SENSOR] T:%.1f H:%.1f AQI:%d | SYS:%s %s | Fan:%d EN:%d\n",
+                t, h, aqi,
                 systemOn ? "ON" : "OFF",
                 cooling ? "COOL" : heating ? "HEAT" : "IDLE",
                 fanSpeed, digitalRead(TEC_EN));
@@ -150,7 +146,6 @@ void handleControl() {
   server.send(200, "text/plain", "OK");
 }
 
-// 硬件测试端点: /test?fan=128&cool=200&heat=0&en=1
 void handleTest() {
   int fanVal = server.hasArg("fan") ? server.arg("fan").toInt() : -1;
   int coolVal = server.hasArg("cool") ? server.arg("cool").toInt() : -1;
@@ -164,11 +159,11 @@ void handleTest() {
   }
 
   char buf[128];
-  snprintf(buf, sizeof(buf), "{\"en\":%d,\"fan\":%d,\"cool\":%d,\"heat\":%d}",
-    digitalRead(TEC_EN), fanSpeed, cooling ? 220 : 0, heating ? 200 : 0);
+  snprintf(buf, sizeof(buf), "{\"ok\":true,\"en\":%d,\"fan\":%d,\"cool\":%s,\"heat\":%s}",
+    digitalRead(TEC_EN), fanSpeed, cooling ? "true" : "false", heating ? "true" : "false");
   server.send(200, "application/json", buf);
-  Serial.printf("TEST: EN=%d Fan=%d Cool=%d Heat=%d\n",
-    digitalRead(TEC_EN), fanSpeed, cooling, heating);
+  Serial.printf("[TEST] EN=%d Fan=%d Cool=%s Heat=%s\n",
+    digitalRead(TEC_EN), fanSpeed, cooling ? "ON" : "OFF", heating ? "ON" : "OFF");
 }
 
 const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
@@ -201,10 +196,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 .btn-t.on{background:var(--c);color:#000;border-color:var(--c)}
 .btn-t:active{opacity:.7}
 .sts{display:flex;gap:8px;margin-top:12px;font-size:.78rem}
-.sts .pill{flex:1;text-align:center;padding:6px;border-radius:4px;background:var(--bg);border:1px solid var(--bd)}
+.sts .pill{flex:1;text-align:center;padding:6px;border-radius:4px;background:var(--bg);border:1px solid var(--bd);cursor:pointer;user-select:none}
+.sts .pill:active{opacity:.7}
 .sts .pill.act{border-color:var(--c);color:var(--c)}
 .sts .pill.hot{border-color:var(--r);color:var(--r)}
 .sts .pill.cold{border-color:var(--b);color:var(--b)}
+.sts .pill.hot.act{background:rgba(248,81,73,.15)}
+.sts .pill.cold.act{background:rgba(88,166,255,.15)}
 .fld{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .fld label{font-size:.78rem;color:var(--t2);min-width:78px}
 .fld input[type=range]{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
@@ -213,6 +211,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
 .note{font-size:.72rem;color:var(--t3);line-height:1.6}
 .note b{color:var(--t2)}
 .tst{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+#chart{width:100%;height:160px;display:block;margin-bottom:8px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--c);color:#000;padding:6px 16px;border-radius:4px;font-size:.82rem;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -227,12 +228,16 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   <div class="mc"><div class="v" style="color:var(--a)" id="mA">--</div><div class="l">AQI</div></div>
 </div>
 <div class="sec">
+  <h2>溫度趨勢</h2>
+  <canvas id="chart"></canvas>
+</div>
+<div class="sec">
   <h2>系統開關</h2>
   <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
   <div class="sts">
     <div class="pill" id="pSys">待機</div>
-    <div class="pill cold" id="pCool">製冷 關</div>
-    <div class="pill hot" id="pHeat">加熱 關</div>
+    <div class="pill cold" id="pCool" onclick="tTest('cool',200)">製冷 關</div>
+    <div class="pill hot" id="pHeat" onclick="tTest('heat',200)">加熱 關</div>
   </div>
 </div>
 <div class="sec">
@@ -260,7 +265,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
   </div>
   <div class="note">
     <p>• 點按鈕直接驅動硬件，跳過溫控邏輯</p>
-    <p>• <b>製冷/加熱不會同時開</b>，點了會先關另一邊</p>
+    <p>• 點上方「製冷/加熱」狀態也可快速切換</p>
   </div>
 </div>
 <div class="sec">
@@ -272,7 +277,46 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:v
     <p>• 安全保護 ＜10°C 或 ＞40°C 強制停 TEC</p>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 <script>
+var hist=[],maxH=60;
+var cv=document.getElementById('chart'),cx=cv.getContext('2d');
+function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);drawChart();}
+window.addEventListener('resize',rs);
+
+function drawChart(){
+  var W=cv.getBoundingClientRect().width,H=cv.getBoundingClientRect().height;
+  var pl=42,pr=8,pt=10,pb=20;
+  cx.clearRect(0,0,W,H);
+  if(hist.length<2){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('等待資料...',W/2,H/2);return;}
+  var mn=Infinity,mx=-Infinity;
+  hist.forEach(function(r){if(r.t<mn)mn=r.t;if(r.t>mx)mx=r.t;});
+  var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
+  var pa=sp*.1;mn-=pa;mx+=pa;sp=mx-mn;
+  var pw=W-pl-pr,ph=H-pt-pb;
+
+  cx.strokeStyle='rgba(139,148,158,.1)';cx.lineWidth=1;
+  cx.fillStyle='#484f58';cx.font='10px system-ui';cx.textAlign='right';
+  for(var i=0;i<=4;i++){var v=mx-(sp*i/4);var y=pt+ph*i/4;cx.beginPath();cx.moveTo(pl,y);cx.lineTo(W-pr,y);cx.stroke();cx.fillText(v.toFixed(1),pl-4,y+3);}
+
+  cx.textAlign='center';cx.fillStyle='#484f58';cx.font='9px system-ui';
+  var st=pw/Math.max(1,hist.length-1);
+  var xt=Math.max(1,Math.ceil(hist.length/6));
+  hist.forEach(function(r,i){if(i%xt===0||i===hist.length-1)cx.fillText(r.ti,pl+st*i,H-pb+14);});
+
+  cx.beginPath();cx.strokeStyle='#f85149';cx.lineWidth=2;cx.lineJoin='round';
+  hist.forEach(function(r,i){var x=pl+st*i;var y=pt+(1-(r.t-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
+  cx.stroke();
+  var la=hist[hist.length-1];var lx=pl+st*(hist.length-1);var ly=pt+(1-(la.t-mn)/sp)*ph;
+  cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle='#f85149';cx.fill();
+
+  cx.fillStyle='#f85149';cx.font='bold 11px system-ui';cx.textAlign='left';
+  cx.fillText(la.t.toFixed(1)+'°C',lx-36,ly-8);
+}
+rs();
+
+function toast(msg){var e=document.getElementById('toast');e.textContent=msg;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
+
 async function poll(){
   try{
     var r=await fetch('/data');var d=await r.json();
@@ -298,6 +342,9 @@ async function poll(){
     document.getElementById('csv').textContent=d.coolStop.toFixed(1)+'°C';
     document.getElementById('nhs').textContent=d.heatStop.toFixed(1);
     document.getElementById('ncs').textContent=d.coolStop.toFixed(1);
+    hist.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
+    if(hist.length>maxH)hist.shift();
+    drawChart();
   }catch(e){
     document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
@@ -309,11 +356,21 @@ function toggleSys(){
 }
 function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?coolStop='+v);}
-function tTest(type,val){
-  if(type==='fan')fetch('/test?fan='+val);
-  else if(type==='cool')fetch('/test?cool='+val+'&heat=0&en=1');
-  else if(type==='heat')fetch('/test?heat='+val+'&cool=0&en=1');
-  else fetch('/test?fan=0&cool=0&heat=0&en=0');
+async function tTest(type,val){
+  try{
+    var url;
+    if(type==='fan')url='/test?fan='+val;
+    else if(type==='cool')url='/test?cool='+val+'&heat=0&en=1';
+    else if(type==='heat')url='/test?heat='+val+'&cool=0&en=1';
+    else url='/test?fan=0&cool=0&heat=0&en=0';
+    var r=await fetch(url);var d=await r.json();
+    if(d.ok){
+      if(type==='off')toast('全部停止');
+      else if(type==='fan')toast('風扇: '+val);
+      else if(type==='cool')toast(d.cooling==='true'?'製冷已開':'製冷已關');
+      else if(type==='heat')toast(d.heating==='true'?'加熱已開':'加熱已關');
+    }
+  }catch(e){toast('操作失敗');}
 }
 poll();setInterval(poll,2000);
 </script>
@@ -331,7 +388,6 @@ void setup() {
   pinMode(TEC_EN, OUTPUT);
   digitalWrite(TEC_EN, LOW);
 
-  // ESP32 Arduino Core 3.0.x API
   ledcSetup(FAN_CH, PWM_FREQ, PWM_RES);
   ledcAttachPin(FAN_PIN, FAN_CH);
   ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES);
@@ -341,12 +397,11 @@ void setup() {
 
   setFan(0);
   setTec(0, 0);
-  Serial.println("PWM OK");
+  Serial.println("[PWM] OK");
 
   Wire.begin();
   Wire.setClock(100000);
 
-  // I2C 總線掃描
   Serial.println("[I2C] 掃描中...");
   int found = 0;
   for (byte addr = 1; addr < 127; addr++) {
@@ -360,7 +415,7 @@ void setup() {
   if (found == 0) Serial.println("[I2C] 無裝置！檢查 SDA/SCL 接線");
 
   WiFi.softAP("ESP32-TEMP", "12345678");
-  Serial.print("AP IP: ");
+  Serial.print("[WiFi] AP IP: ");
   Serial.println(WiFi.softAPIP());
 
   uint8_t bmeAddr = 0;
@@ -385,7 +440,7 @@ void setup() {
   server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
-  Serial.println("Server started");
+  Serial.println("[Server] 啟動完成");
 }
 
 void loop() {
