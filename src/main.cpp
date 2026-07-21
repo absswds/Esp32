@@ -299,8 +299,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>風速控制</h2>
   <div class="fld">
     <label>手動風速</label>
-    <input type="range" min="0" max="255" step="5" value="0" id="fanS" oninput="setFanM(this.value)">
-    <span class="rv" id="fanV">0</span>
+    <input type="range" min="0" max="100" step="1" value="0" id="fanS" oninput="setFanM(this.value)">
+    <span class="rv" id="fanV">0%</span>
   </div>
 </div>
 <div class="sec">
@@ -383,8 +383,8 @@ async function doPoll(){
     document.getElementById('modeBtn').style.background=d.manualMode?'rgba(239,68,68,.15)':'rgba(20,184,166,.15)';
     document.getElementById('modeBtn').style.color=d.manualMode?'var(--r)':'var(--c)';
     if(!fm){
-      document.getElementById('fanV').textContent=d.fanSpeed;
-      document.getElementById('fanS').value=d.fanSpeed;
+      document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
+      document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
     H.push({t:d.temperature,h:d.humidity,p:d.pressure,a:d.aqi,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
@@ -400,7 +400,7 @@ function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFix
 function setCS(v){document.getElementById('csvv').textContent=parseFloat(v).toFixed(1);fetch('/control?coolStop='+v);}
 function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmin').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
 function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmax').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
-function setFanM(v){fm=true;document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);setTimeout(function(){fm=false;},3000);}
+function setFanM(v){fm=true;document.getElementById('fanV').textContent=v+'%';fetch('/test?fan='+Math.round(v*255/100));setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
   try{
     var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
