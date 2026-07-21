@@ -51,13 +51,10 @@ void updateFanAuto() {
   if (isnan(temperatureC)) return;
   if (!fanAuto) return;
 
-  if (temperatureC > targetTemp + rampWidth) {
+  if (temperatureC > targetTemp) {
     setFanSpeed(255);
-  } else if (temperatureC <= targetTemp) {
-    setFanSpeed(0);
   } else {
-    float ratio = (temperatureC - targetTemp) / rampWidth;
-    setFanSpeed((int)(ratio * 255));
+    setFanSpeed(0);
   }
 }
 
@@ -361,7 +358,7 @@ function updateFanUI(data){
   const pct=data.fanSpeed!==undefined?Math.round(data.fanSpeed*100/255):0;
   $('fanSpeedLabel').textContent=pct+'%';
   $('fanDetail').textContent=data.auto?
-    ('降溫至 '+data.targetTemp+'°C / 現在 '+(data.temperature!==undefined?data.temperature.toFixed(1):'--')+'°C'):
+    (data.fanSpeed>0?'全速降溫中':'已達目標溫度'):
     ('手動設定 '+pct+'%');
 
   const blades=$('fanBlades');
@@ -630,7 +627,12 @@ startPoll();
 }
 
 void handleRoot() {
-  server.send(200, "text/html; charset=utf-8", buildHtml());
+  Serial.println("收到網頁請求");
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html; charset=utf-8", "");
+  String html = buildHtml();
+  server.sendContent(html);
+  Serial.println("網頁發送完成");
 }
 
 void handleData() {
@@ -790,6 +792,9 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleData);
   server.on("/fan", HTTP_GET, handleFan);
+  server.on("/test", HTTP_GET, []() {
+    server.send(200, "text/plain", "OK");
+  });
   server.on("/favicon.ico", HTTP_GET, []() {
     server.send(204);
   });
