@@ -345,22 +345,38 @@ void setup() {
 
   Wire.begin();
   Wire.setClock(100000);
-  Wire.setTimeOut(50);
+
+  // I2C 總線掃描
+  Serial.println("[I2C] 掃描中...");
+  int found = 0;
+  for (byte addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    byte err = Wire.endTransmission();
+    if (err == 0) {
+      Serial.printf("[I2C] 發現裝置: 0x%02X\n", addr);
+      found++;
+    }
+  }
+  if (found == 0) Serial.println("[I2C] 無裝置！檢查 SDA/SCL 接線");
 
   WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  if (bme.begin(0x77) || bme.begin(0x76)) {
+  uint8_t bmeAddr = 0;
+  if (bme.begin(0x77)) { bmeAddr = 0x77; }
+  else if (bme.begin(0x76)) { bmeAddr = 0x76; }
+
+  if (bmeAddr) {
     bme.setTemperatureOversampling(BME680_OS_2X);
     bme.setHumidityOversampling(BME680_OS_1X);
     bme.setPressureOversampling(BME680_OS_4X);
     bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
     bme.setGasHeater(320, 150);
     bmeOk = true;
-    Serial.println("BME688 OK");
+    Serial.printf("[BME688] 連線成功 (addr: 0x%02X)\n", bmeAddr);
   } else {
-    Serial.println("BME688 fail");
+    Serial.println("[BME688] 未找到！嘗試 0x77/0x76 均失敗");
   }
 
   server.on("/", handleRoot);
