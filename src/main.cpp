@@ -7,8 +7,8 @@
 
 #define FAN_PIN 18
 #define TEC_EN 19
-#define TEC_LPWM 25
-#define TEC_RPWM 26
+#define TEC_LPWM 26  // 制冷（原先 25 接反了）
+#define TEC_RPWM 25  // 加熱（原先 26 接反了）
 #define PWM_FREQ 25000
 #define PWM_RES 8
 #define FAN_CH 0
