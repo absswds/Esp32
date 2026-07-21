@@ -31,6 +31,7 @@ bool heating = false;
 bool bmeOk = false;
 bool fanManual = false;
 bool tecManual = false;
+bool manualMode = false;
 
 float safeMin = 10.0;
 float safeMax = 40.0;
@@ -66,7 +67,7 @@ void startAll() {
 }
 
 void controlTemp() {
-  if (!systemOn || isnan(t) || tecManual) return;
+  if (!systemOn || isnan(t) || tecManual || manualMode) return;
   if (t < safeMin || t > safeMax) {
     setTec(0, 0);
     if (!fanManual) setFan(t > safeMax ? 255 : 60);
@@ -123,10 +124,10 @@ void sendJson(const char* msg) {
 void handleData() {
   if (!bmeOk) { sendJson("BME688 未連線"); return; }
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
-  char buf[400];
+  char buf[420];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.0f,\"safeMax\":%.0f}",
-    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
+    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.0f,\"safeMax\":%.0f}",
+    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
   server.send(200, "application/json", buf);
 }
 
@@ -134,6 +135,12 @@ void handleControl() {
   if (server.hasArg("system")) {
     systemOn = server.arg("system").toInt() == 1;
     if (systemOn) startAll(); else stopAll();
+  }
+  if (server.hasArg("manual")) {
+    manualMode = server.arg("manual").toInt() == 1;
+    tecManual = manualMode;
+    fanManual = manualMode;
+    Serial.printf("[SYS] %s 模式\n", manualMode ? "手動" : "自動");
   }
   if (server.hasArg("coolStop")) {
     float v = server.arg("coolStop").toFloat();
@@ -156,6 +163,11 @@ void handleControl() {
 }
 
 void handleTest() {
+  if (!systemOn) {
+    server.send(200, "application/json", "{\"ok\":false,\"message\":\"請先開啟系統\"}");
+    Serial.println("[TEST] 系統未開啟");
+    return;
+  }
   int fanVal = server.hasArg("fan") ? server.arg("fan").toInt() : -1;
   int coolVal = server.hasArg("cool") ? server.arg("cool").toInt() : -1;
   int heatVal = server.hasArg("heat") ? server.arg("heat").toInt() : -1;
@@ -256,6 +268,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <div class="pill cold" id="pCool" onclick="tTest('cool',220)">製冷</div>
     <div class="pill hot" id="pHeat" onclick="tTest('heat',220)">加熱</div>
   </div>
+  <div class="pills" style="margin-top:6px">
+    <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
+  </div>
 </div>
 <div class="sec">
   <h2>溫度閾值</h2>
@@ -334,7 +349,7 @@ rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!H.length){toast('無資料');return;}
-  var c='\uFEFF時間,溫度(°C)\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2);}).join('\n');
+  var c='\uFEFF時間,溫度(°C),濕度(%),氣壓(hPa),AQI\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2)+','+r.h.toFixed(1)+','+r.p.toFixed(1)+','+r.a;}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
   toast('已導出 '+H.length+' 筆資料');
 }
@@ -368,11 +383,14 @@ async function doPoll(){
     document.getElementById('smaxV').textContent=d.safeMax;
     document.getElementById('nmin').textContent=d.safeMin;
     document.getElementById('nmax').textContent=d.safeMax;
+    document.getElementById('modeBtn').textContent=d.manualMode?'切換自動模式':'切換手動模式';
+    document.getElementById('modeBtn').style.background=d.manualMode?'rgba(239,68,68,.15)':'rgba(20,184,166,.15)';
+    document.getElementById('modeBtn').style.color=d.manualMode?'var(--r)':'var(--c)';
     if(!fm){
       document.getElementById('fanV').textContent=d.fanSpeed;
       document.getElementById('fanS').value=d.fanSpeed;
     }
-    H.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
+    H.push({t:d.temperature,h:d.humidity,p:d.pressure,a:d.aqi,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     dC();
   }catch(e){
@@ -381,6 +399,7 @@ async function doPoll(){
   }
 }
 function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
+function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
 function setHS(v){document.getElementById('hsv').textContent=parseInt(v);fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csvv').textContent=parseInt(v);fetch('/control?coolStop='+v);}
 function setSMin(v){document.getElementById('sminV').textContent=v;document.getElementById('nmin').textContent=v;fetch('/control?safeMin='+v);}
@@ -390,7 +409,7 @@ async function tTest(type,val){
   try{
     var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
     var r=await fetch(url),d=await r.json();
-    if(d.ok)toast(type==='cool'?(d.cooling==='true'?'製冷已開':'製冷已關'):(d.heating==='true'?'加熱已開':'加熱已關'));
+    if(d.ok)toast(type==='cool'?(d.cool==='true'?'製冷已開':'製冷已關'):(d.heat==='true'?'加熱已開':'加熱已關'));
   }catch(e){toast('操作失敗');}
 }
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
