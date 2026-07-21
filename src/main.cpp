@@ -30,8 +30,8 @@ bool cooling = false;
 bool heating = false;
 bool bmeOk = false;
 
-const float SAFE_MIN = 10.0;
-const float SAFE_MAX = 40.0;
+float safeMin = 10.0;
+float safeMax = 40.0;
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
@@ -61,9 +61,9 @@ void startAll() {
 
 void controlTemp() {
   if (!systemOn || isnan(t)) return;
-  if (t < SAFE_MIN || t > SAFE_MAX) {
+  if (t < safeMin || t > safeMax) {
     setTec(0, 0);
-    setFan(t > SAFE_MAX ? 255 : 60);
+    setFan(t > safeMax ? 255 : 60);
     Serial.println("[SAFE] 極端溫度");
     return;
   }
@@ -117,10 +117,10 @@ void sendJson(const char* msg) {
 void handleData() {
   if (!bmeOk) { sendJson("BME688 未連線"); return; }
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
-  char buf[320];
+  char buf[400];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f}",
-    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", coolStop, heatStop);
+    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.0f,\"safeMax\":%.0f}",
+    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
   server.send(200, "application/json", buf);
 }
 
@@ -135,7 +135,15 @@ void handleControl() {
   }
   if (server.hasArg("heatStop")) {
     float v = server.arg("heatStop").toFloat();
-    heatStop = constrain(v, coolStop + 0.5, SAFE_MAX);
+    heatStop = constrain(v, coolStop + 0.5, safeMax);
+  }
+  if (server.hasArg("safeMin")) {
+    float v = server.arg("safeMin").toFloat();
+    safeMin = constrain(v, 0, safeMax - 1);
+  }
+  if (server.hasArg("safeMax")) {
+    float v = server.arg("safeMax").toFloat();
+    safeMax = constrain(v, safeMin + 1, 50);
   }
   controlTemp();
   server.send(200, "text/plain", "OK");
@@ -251,7 +259,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <input type="range" min="10" max="30" step="1" value="26" id="cs" oninput="setCS(this.value)">
     <span class="rv" id="csvv">26</span>
   </div>
-  <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜10 / ＞40</div>
+  <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜<span id="nmin">10</span>°C / ＞<span id="nmax">40</span>°C</div>
+</div>
+<div class="sec">
+  <h2>安全溫度</h2>
+  <div class="fld">
+    <label>最低溫</label>
+    <input type="range" min="0" max="25" step="1" value="10" id="smin" oninput="setSMin(this.value)">
+    <span class="rv" id="sminV">10</span>
+  </div>
+  <div class="fld">
+    <label>最高溫</label>
+    <input type="range" min="30" max="50" step="1" value="40" id="smax" oninput="setSMax(this.value)">
+    <span class="rv" id="smaxV">40</span>
+  </div>
+  <div class="info">低於最低或超過最高溫，TEC 自動關閉保護</div>
 </div>
 <div class="sec">
   <h2>風速控制</h2>
@@ -330,6 +352,12 @@ async function doPoll(){
     document.getElementById('csvv').textContent=d.coolStop.toFixed(0);
     document.getElementById('nhs').textContent=d.heatStop.toFixed(0);
     document.getElementById('ncs').textContent=d.coolStop.toFixed(0);
+    document.getElementById('smin').value=d.safeMin;
+    document.getElementById('sminV').textContent=d.safeMin;
+    document.getElementById('smax').value=d.safeMax;
+    document.getElementById('smaxV').textContent=d.safeMax;
+    document.getElementById('nmin').textContent=d.safeMin;
+    document.getElementById('nmax').textContent=d.safeMax;
     document.getElementById('fanV').textContent=d.fanSpeed;
     document.getElementById('fanS').value=d.fanSpeed;
     H.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
@@ -343,6 +371,8 @@ async function doPoll(){
 function toggleSys(){var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
 function setHS(v){document.getElementById('hsv').textContent=parseInt(v);fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csvv').textContent=parseInt(v);fetch('/control?coolStop='+v);}
+function setSMin(v){document.getElementById('sminV').textContent=v;document.getElementById('nmin').textContent=v;fetch('/control?safeMin='+v);}
+function setSMax(v){document.getElementById('smaxV').textContent=v;document.getElementById('nmax').textContent=v;fetch('/control?safeMax='+v);}
 function setFanM(v){document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);}
 async function tTest(type,val){
   try{
