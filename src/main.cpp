@@ -126,7 +126,7 @@ void handleData() {
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
   char buf[420];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.0f,\"safeMax\":%.0f}",
+    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
     t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
   server.send(200, "application/json", buf);
 }
@@ -152,11 +152,11 @@ void handleControl() {
   }
   if (server.hasArg("safeMin")) {
     float v = server.arg("safeMin").toFloat();
-    safeMin = constrain(v, 0, safeMax - 1);
+    safeMin = constrain(v, 0, 50);
   }
   if (server.hasArg("safeMax")) {
     float v = server.arg("safeMax").toFloat();
-    safeMax = constrain(v, safeMin + 1, 50);
+    safeMax = constrain(v, 0, 50);
   }
   controlTemp();
   server.send(200, "text/plain", "OK");
@@ -285,12 +285,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>安全溫度</h2>
   <div class="fld">
     <label>最低溫</label>
-    <input type="range" min="0" max="25" step="1" value="10" id="smin" oninput="setSMin(this.value)">
+    <input type="range" min="0" max="30" step="0.5" value="10" id="smin" oninput="setSMin(this.value)">
     <span class="rv" id="sminV">10</span>
   </div>
   <div class="fld">
     <label>最高溫</label>
-    <input type="range" min="30" max="50" step="1" value="40" id="smax" oninput="setSMax(this.value)">
+    <input type="range" min="20" max="50" step="0.5" value="40" id="smax" oninput="setSMax(this.value)">
     <span class="rv" id="smaxV">40</span>
   </div>
   <div class="info">低於最低或超過最高溫，TEC 自動關閉保護</div>
@@ -374,11 +374,11 @@ async function doPoll(){
     document.getElementById('nhs').textContent=d.heatStop.toFixed(1);
     document.getElementById('ncs').textContent=d.coolStop.toFixed(1);
     document.getElementById('smin').value=d.safeMin;
-    document.getElementById('sminV').textContent=d.safeMin;
+    document.getElementById('sminV').textContent=d.safeMin.toFixed(1);
     document.getElementById('smax').value=d.safeMax;
-    document.getElementById('smaxV').textContent=d.safeMax;
-    document.getElementById('nmin').textContent=d.safeMin;
-    document.getElementById('nmax').textContent=d.safeMax;
+    document.getElementById('smaxV').textContent=d.safeMax.toFixed(1);
+    document.getElementById('nmin').textContent=d.safeMin.toFixed(1);
+    document.getElementById('nmax').textContent=d.safeMax.toFixed(1);
     document.getElementById('modeBtn').textContent=d.manualMode?'切換自動模式':'切換手動模式';
     document.getElementById('modeBtn').style.background=d.manualMode?'rgba(239,68,68,.15)':'rgba(20,184,166,.15)';
     document.getElementById('modeBtn').style.color=d.manualMode?'var(--r)':'var(--c)';
@@ -398,8 +398,8 @@ function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
 function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1);fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csvv').textContent=parseFloat(v).toFixed(1);fetch('/control?coolStop='+v);}
-function setSMin(v){document.getElementById('sminV').textContent=v;document.getElementById('nmin').textContent=v;fetch('/control?safeMin='+v);}
-function setSMax(v){document.getElementById('smaxV').textContent=v;document.getElementById('nmax').textContent=v;fetch('/control?safeMax='+v);}
+function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmin').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
+function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmax').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
 function setFanM(v){fm=true;document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
   try{
