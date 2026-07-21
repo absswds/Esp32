@@ -102,7 +102,7 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BME688 Monitor</title>
+<title>BME688 環境監測</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0f1318;--sf:#161b22;--bd:#2d333b;--tx:#e6edf3;--t2:#8b949e;--t3:#484f58;--r:#f85149;--b:#58a6ff;--g:#3fb950;--a:#d29922;--c:#39d2c0}
@@ -160,8 +160,8 @@ td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);w
 </head>
 <body>
 <div class="row">
-  <h1><b>BME688</b> Monitor</h1>
-  <div class="st"><span class="dot" id="dot"></span><span id="st">Connecting...</span></div>
+  <h1><b>BME688</b> 環境監測</h1>
+  <div class="st"><span class="dot" id="dot"></span><span id="st">等待連線...</span></div>
 </div>
 <div class="pw"><div class="pg">
   <button onclick="setPoll(1000,this)">1s</button>
@@ -199,7 +199,7 @@ td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);w
   <div class="hw"><table id="ht"><thead><tr><th>Time</th><th>Temp</th><th>Hum</th><th>hPa</th><th>Gas</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
   <div style="display:flex;gap:6px">
     <button class="gbtn" onclick="clearH()">Clear</button>
-    <button class="gbtn" onclick="exportCSV()">CSV</button>
+    <button class="gbtn" onclick="exportCSV()">導出 CSV</button>
   </div>
 </div>
 <script>
