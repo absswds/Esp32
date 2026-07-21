@@ -13,6 +13,10 @@
 #define PWM_FREQ 25000
 #define PWM_RES 8
 
+#define FAN_CH 0
+#define TEC_L_CH 1
+#define TEC_R_CH 2
+
 Adafruit_BME680 bme;
 WebServer server(80);
 
@@ -33,14 +37,14 @@ const float SAFE_MAX = 40.0;
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
-  ledcWrite(FAN_PIN, fanSpeed);
+  ledcWrite(FAN_CH, fanSpeed);
 }
 
 void setTec(int cool, int heat) {
   cooling = cool > 0;
   heating = heat > 0;
-  ledcWrite(TEC_LPWM, cool);
-  ledcWrite(TEC_RPWM, heat);
+  ledcWrite(TEC_L_CH, cool);
+  ledcWrite(TEC_R_CH, heat);
   Serial.printf("TEC: L=%d R=%d EN=%d\n", cool, heat, digitalRead(TEC_EN));
 }
 
@@ -319,10 +323,13 @@ void setup() {
   pinMode(TEC_EN, OUTPUT);
   digitalWrite(TEC_EN, LOW);
 
-  // ESP32 Arduino Core 3.x API: ledcAttach(pin, freq, resolution)
-  ledcAttach(FAN_PIN, PWM_FREQ, PWM_RES);
-  ledcAttach(TEC_LPWM, PWM_FREQ, PWM_RES);
-  ledcAttach(TEC_RPWM, PWM_FREQ, PWM_RES);
+  // ESP32 Arduino Core 3.0.x API
+  ledcSetup(FAN_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(FAN_PIN, FAN_CH);
+  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(TEC_LPWM, TEC_L_CH);
+  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(TEC_RPWM, TEC_R_CH);
 
   setFan(0);
   setTec(0, 0);
