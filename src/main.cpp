@@ -10,6 +10,11 @@
 #define WEB_PORT 80
 #define DISPLAY_POINTS 30
 
+#define FAN_PIN 25
+#define FAN_CHANNEL 0
+#define FAN_FREQ 25000
+#define FAN_RESOLUTION 8
+
 Adafruit_BME680 bme;
 WebServer server(WEB_PORT);
 
@@ -25,6 +30,32 @@ unsigned long lastRead = 0;
 
 float runningMin[4] = {1000, 1000, 10000, 1e9};
 float runningMax[4] = {-1000, -1000, -10000, -1};
+
+// --- Fan control ---
+bool fanAuto = true;
+int fanSpeed = 0;
+float targetTemp = 25.0;
+float rampWidth = 3.0;
+
+void setFanSpeed(int speed) {
+  speed = constrain(speed, 0, 255);
+  fanSpeed = speed;
+  ledcWrite(FAN_CHANNEL, speed);
+}
+
+void updateFanAuto() {
+  if (isnan(temperatureC)) return;
+  if (!fanAuto) return;
+
+  if (temperatureC < targetTemp - rampWidth) {
+    setFanSpeed(255);
+  } else if (temperatureC >= targetTemp) {
+    setFanSpeed(0);
+  } else {
+    float ratio = (targetTemp - temperatureC) / rampWidth;
+    setFanSpeed((int)(ratio * 255));
+  }
+}
 
 String buildHtml() {
   return R"HTML(
@@ -43,7 +74,7 @@ body::before{content:'';position:fixed;inset:-50%;width:200%;height:200%;backgro
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes fadeSlideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
-@keyframes dotPulse{0%,100%{r:4;opacity:1}50%{r:7;opacity:.5}}
+@keyframes fanSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .wrapper{max-width:1200px;margin:0 auto;position:relative;z-index:1}
 
 .hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:20px 28px;border-radius:20px;background:var(--card);backdrop-filter:blur(16px);border:1px solid var(--border);margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)}
@@ -110,6 +141,33 @@ tr:nth-child(even):hover td{background:rgba(0,0,0,0.04)}
 tr.new-row{animation:fadeSlideIn .4s ease-out}
 .temp-c{color:#ea580c}.hum-c{color:#0284c7}.pres-c{color:#7c3aed}.gas-c{color:#059669}.aqi-c{color:#d97706}
 
+/* Fan card */
+.fan-card{position:relative}
+.fan-ctrl{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.fan-icon{width:56px;height:56px;flex-shrink:0}
+.fan-icon svg{width:100%;height:100%}
+.fan-blades{transform-origin:28px 28px;transition:transform .3s}
+.fan-blades.spinning{animation:fanSpin .8s linear infinite}
+.fan-info{flex:1;min-width:180px}
+.fan-speed-label{font-size:2rem;font-weight:700;color:#0ea5e9}
+.fan-mode{display:inline-block;padding:3px 10px;border-radius:6px;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-left:8px}
+.fan-mode.auto{background:rgba(34,197,94,0.12);color:#16a34a}
+.fan-mode.manual{background:rgba(99,102,241,0.12);color:#6366f1}
+.fan-controls{display:flex;flex-direction:column;gap:10px;min-width:260px}
+.fan-slider-row{display:flex;align-items:center;gap:10px}
+.fan-slider-row label{font-size:.82rem;color:var(--txt2);white-space:nowrap}
+.fan-slider{flex:1;-webkit-appearance:none;height:6px;border-radius:3px;background:linear-gradient(90deg,#0ea5e9,#6366f1);outline:none;transition:opacity .2s}
+.fan-slider::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid #0ea5e9;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.15)}
+.fan-slider::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:2px solid #0ea5e9;cursor:pointer}
+.fan-btns{display:flex;gap:8px}
+.fan-btn{padding:7px 16px;border-radius:8px;border:1px solid var(--border);background:var(--glass);color:var(--txt2);font-size:.8rem;cursor:pointer;transition:all .2s;font-family:inherit}
+.fan-btn:hover{background:rgba(0,0,0,0.04);color:var(--txt)}
+.fan-btn.active{background:rgba(14,165,233,0.12);color:#0ea5e9;border-color:rgba(14,165,233,0.3)}
+
+.temp-target-row{display:flex;align-items:center;gap:10px;margin-top:6px}
+.temp-target-row label{font-size:.82rem;color:var(--txt2)}
+.temp-target-input{width:60px;padding:5px 8px;border-radius:8px;border:1px solid var(--border);font-size:.85rem;text-align:center;font-family:inherit}
+
 @media(max-width:600px){
   body{padding:10px}
   .stat{padding:14px 16px}
@@ -117,6 +175,8 @@ tr.new-row{animation:fadeSlideIn .4s ease-out}
   .card{padding:14px}
   .hero{padding:14px 18px;flex-direction:column;align-items:stretch}
   .hero-right{justify-content:center}
+  .fan-ctrl{flex-direction:column;align-items:stretch}
+  .fan-controls{min-width:0}
 }
 </style>
 </head>
@@ -179,6 +239,47 @@ tr.new-row{animation:fadeSlideIn .4s ease-out}
     </div>
   </section>
 
+  <section class="card fan-card">
+    <div class="card-header">
+      <span class="card-title">風扇控制</span>
+      <span class="fan-mode auto" id="fanMode">自動</span>
+    </div>
+    <div class="fan-ctrl">
+      <div class="fan-icon">
+        <svg viewBox="0 0 56 56" fill="none">
+          <circle cx="28" cy="28" r="27" stroke="#0ea5e9" stroke-width="2" opacity="0.2"/>
+          <g class="fan-blades" id="fanBlades">
+            <ellipse cx="28" cy="14" rx="5" ry="12" fill="#0ea5e9" opacity="0.7"/>
+            <ellipse cx="28" cy="14" rx="5" ry="12" fill="#0ea5e9" opacity="0.7" transform="rotate(90 28 28)"/>
+            <ellipse cx="28" cy="14" rx="5" ry="12" fill="#0ea5e9" opacity="0.7" transform="rotate(180 28 28)"/>
+            <ellipse cx="28" cy="14" rx="5" ry="12" fill="#0ea5e9" opacity="0.7" transform="rotate(270 28 28)"/>
+          </g>
+          <circle cx="28" cy="28" r="4" fill="#0ea5e9"/>
+        </svg>
+      </div>
+      <div class="fan-info">
+        <div class="fan-speed-label" id="fanSpeedLabel">0%</div>
+        <div class="mini" id="fanDetail">等待資料...</div>
+      </div>
+      <div class="fan-controls">
+        <div class="fan-btns">
+          <button class="fan-btn active" id="btnAuto" onclick="setFanMode(true)">自動</button>
+          <button class="fan-btn" id="btnManual" onclick="setFanMode(false)">手動</button>
+        </div>
+        <div class="fan-slider-row" id="manualRow" style="display:none">
+          <label>風速</label>
+          <input type="range" class="fan-slider" id="fanSlider" min="0" max="100" value="0" oninput="manualFan(this.value)">
+          <span id="fanSliderVal" style="font-size:.82rem;color:var(--txt2);min-width:36px;text-align:right">0%</span>
+        </div>
+        <div class="temp-target-row" id="autoRow">
+          <label>目標溫度</label>
+          <input type="number" class="temp-target-input" id="targetTempInput" value="25" min="20" max="40" step="0.5" onchange="setTargetTemp(this.value)">
+          <label>°C</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="card">
     <div class="card-header">
       <span class="card-title">即時趨勢圖</span>
@@ -226,6 +327,59 @@ const visible={temperature:true,humidity:false,pressure:false,gas:false};
 let prevVals={temperature:NAN,humidity:NAN,pressure:NAN,gas:NAN};
 let pollTimer=null;
 let pollMs=2000;
+
+// --- Fan UI ---
+let fanAutoMode=true;
+
+function setFanMode(auto){
+  fanAutoMode=auto;
+  $('btnAuto').className='fan-btn'+(auto?' active':'');
+  $('btnManual').className='fan-btn'+(!auto?' active':'');
+  $('manualRow').style.display=auto?'none':'flex';
+  $('autoRow').style.display=auto?'flex':'none';
+  $('fanMode').textContent=auto?'自動':'手動';
+  $('fanMode').className='fan-mode '+(auto?'auto':'manual');
+  fetch('/fan?auto='+(auto?1:0));
+}
+
+function manualFan(val){
+  $('fanSliderVal').textContent=val+'%';
+  const duty=Math.round(val*255/100);
+  fetch('/fan?speed='+duty);
+}
+
+function setTargetTemp(val){
+  fetch('/fan?target='+val);
+}
+
+function updateFanUI(data){
+  if(data===undefined)return;
+  const pct=data.fanSpeed!==undefined?Math.round(data.fanSpeed*100/255):0;
+  $('fanSpeedLabel').textContent=pct+'%';
+  $('fanDetail').textContent=data.auto?
+    ('目標 '+data.targetTemp+'°C / 現在 '+(data.temperature!==undefined?data.temperature.toFixed(1):'--')+'°C'):
+    ('手動設定 '+pct+'%');
+
+  const blades=$('fanBlades');
+  if(pct>0){blades.classList.add('spinning');blades.style.animationDuration=Math.max(0.15,1.5-pct/100*1.3)+'s';}
+  else{blades.classList.remove('spinning');}
+
+  if(data.auto!==undefined){
+    fanAutoMode=data.auto;
+    $('btnAuto').className='fan-btn'+(data.auto?' active':'');
+    $('btnManual').className='fan-btn'+(!data.auto?' active':'');
+    $('manualRow').style.display=data.auto?'none':'flex';
+    $('autoRow').style.display=data.auto?'flex':'none';
+    $('fanMode').textContent=data.auto?'自動':'手動';
+    $('fanMode').className='fan-mode '+(data.auto?'auto':'manual');
+  }
+  if(data.targetTemp!==undefined)$('targetTempInput').value=data.targetTemp;
+  if(!fanAutoMode&&data.fanSpeed!==undefined){
+    const sliderPct=Math.round(data.fanSpeed*100/255);
+    $('fanSlider').value=sliderPct;
+    $('fanSliderVal').textContent=sliderPct+'%';
+  }
+}
 
 function buildLegend(){
   legendEl.innerHTML=KEYS.map((k,i)=>
@@ -391,6 +545,8 @@ function addData(data){
     });
   }
   drawChart();
+
+  if(data.fanSpeed!==undefined)updateFanUI(data);
 }
 
 function handleTooltip(ev){
@@ -478,14 +634,42 @@ void handleData() {
   if (isnan(temperatureC)) {
     json = "{\"ok\":false,\"message\":\"暫無有效感測資料\"}";
   } else {
-    char buffer[260];
+    char buffer[360];
     snprintf(buffer, sizeof(buffer),
-             "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"time\":\"%02u:%02u:%02u\"}",
+             "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,"
+             "\"fanSpeed\":%d,\"auto\":%s,\"targetTemp\":%.1f,"
+             "\"time\":\"%02u:%02u:%02u\"}",
              temperatureC, humidity, pressure, gasResistance, aqi,
+             fanSpeed, fanAuto ? "true" : "false", targetTemp,
              (millis() / 1000 / 3600) % 24, (millis() / 1000 / 60) % 60, (millis() / 1000) % 60);
     json = buffer;
   }
   server.send(200, "application/json", json);
+}
+
+void handleFan() {
+  if (server.hasArg("speed")) {
+    fanAuto = false;
+    int spd = server.arg("speed").toInt();
+    setFanSpeed(spd);
+    Serial.printf("手動風速: %d\n", spd);
+  }
+  if (server.hasArg("auto")) {
+    fanAuto = (server.arg("auto") == "1");
+    Serial.printf("自動模式: %s\n", fanAuto ? "開" : "關");
+    if (fanAuto) updateFanAuto();
+  }
+  if (server.hasArg("target")) {
+    targetTemp = server.arg("target").toFloat();
+    targetTemp = constrain(targetTemp, 20.0, 40.0);
+    Serial.printf("目標溫度: %.1f°C\n", targetTemp);
+    if (fanAuto) updateFanAuto();
+  }
+
+  char buf[120];
+  snprintf(buf, sizeof(buf), "{\"fanSpeed\":%d,\"auto\":%s,\"targetTemp\":%.1f}",
+           fanSpeed, fanAuto ? "true" : "false", targetTemp);
+  server.send(200, "application/json", buf);
 }
 
 bool scanI2C() {
@@ -530,14 +714,22 @@ void readSensor() {
   gasResistance = bme.gas_resistance / 1000.0;
   aqi = calcAqi(gasResistance);
 
-  Serial.printf("T:%.1f°C H:%.1f%% P:%.1fhPa G:%.1fkΩ AQI:%d\n",
-                temperatureC, humidity, pressure, gasResistance, aqi);
+  Serial.printf("T:%.1f°C H:%.1f%% P:%.1fhPa G:%.1fkΩ AQI:%d Fan:%d\n",
+                temperatureC, humidity, pressure, gasResistance, aqi, fanSpeed);
+
+  updateFanAuto();
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Wire.begin();
+
+  // Fan PWM setup
+  ledcSetup(FAN_CHANNEL, FAN_FREQ, FAN_RESOLUTION);
+  ledcAttachPin(FAN_PIN, FAN_CHANNEL);
+  ledcWrite(FAN_CHANNEL, 0);
+  Serial.println("風扇 PWM 已初始化 (GPIO 25)");
 
   if (scanI2C()) {
     Serial.print("使用 BME688 地址：0x");
@@ -567,6 +759,7 @@ void setup() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleData);
+  server.on("/fan", HTTP_GET, handleFan);
   server.begin();
   Serial.println("Web 伺服器已啟動");
 }
