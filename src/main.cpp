@@ -37,6 +37,10 @@ int fanSpeed = 0;
 float targetTemp = 25.0;
 float rampWidth = 3.0;
 
+// --- Sensor recovery ---
+int sensorFailCount = 0;
+unsigned long lastSensorReinit = 0;
+
 void setFanSpeed(int speed) {
   speed = constrain(speed, 0, 255);
   fanSpeed = speed;
@@ -47,12 +51,12 @@ void updateFanAuto() {
   if (isnan(temperatureC)) return;
   if (!fanAuto) return;
 
-  if (temperatureC < targetTemp - rampWidth) {
+  if (temperatureC > targetTemp + rampWidth) {
     setFanSpeed(255);
-  } else if (temperatureC >= targetTemp) {
+  } else if (temperatureC <= targetTemp) {
     setFanSpeed(0);
   } else {
-    float ratio = (targetTemp - temperatureC) / rampWidth;
+    float ratio = (temperatureC - targetTemp) / rampWidth;
     setFanSpeed((int)(ratio * 255));
   }
 }
@@ -357,7 +361,7 @@ function updateFanUI(data){
   const pct=data.fanSpeed!==undefined?Math.round(data.fanSpeed*100/255):0;
   $('fanSpeedLabel').textContent=pct+'%';
   $('fanDetail').textContent=data.auto?
-    ('目標 '+data.targetTemp+'°C / 現在 '+(data.temperature!==undefined?data.temperature.toFixed(1):'--')+'°C'):
+    ('降溫至 '+data.targetTemp+'°C / 現在 '+(data.temperature!==undefined?data.temperature.toFixed(1):'--')+'°C'):
     ('手動設定 '+pct+'%');
 
   const blades=$('fanBlades');
@@ -703,11 +707,37 @@ int calcAqi(float gasKOhm) {
 
 void readSensor() {
   if (!bmeDetected) return;
+
+  // Skip if too many failures - reinit after 30 seconds
+  if (sensorFailCount >= 5) {
+    if (millis() - lastSensorReinit < 30000) return;
+    Serial.println("嘗試重新初始化 BME688...");
+    if (bme.begin(bmeAddress)) {
+      bme.setTemperatureOversampling(BME680_OS_8X);
+      bme.setHumidityOversampling(BME680_OS_2X);
+      bme.setPressureOversampling(BME680_OS_4X);
+      bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
+      bme.setGasHeater(320, 150);
+      sensorFailCount = 0;
+      Serial.println("BME688 重新初始化成功");
+    } else {
+      lastSensorReinit = millis();
+      Serial.println("BME688 重新初始化失敗");
+      return;
+    }
+  }
+
   if (!bme.performReading()) {
-    Serial.println("BME688 讀取失敗");
-    temperatureC = NAN; humidity = NAN; pressure = NAN; gasResistance = NAN; aqi = 0;
+    sensorFailCount++;
+    Serial.printf("BME688 讀取失敗 (%d/5)\n", sensorFailCount);
+    if (sensorFailCount >= 5) {
+      temperatureC = NAN; humidity = NAN; pressure = NAN; gasResistance = NAN; aqi = 0;
+      lastSensorReinit = millis();
+    }
     return;
   }
+
+  sensorFailCount = 0;
   temperatureC = bme.temperature;
   humidity = bme.humidity;
   pressure = bme.pressure / 100.0;
@@ -760,6 +790,12 @@ void setup() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleData);
   server.on("/fan", HTTP_GET, handleFan);
+  server.on("/favicon.ico", HTTP_GET, []() {
+    server.send(204);
+  });
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "Not Found");
+  });
   server.begin();
   Serial.println("Web 伺服器已啟動");
 }
