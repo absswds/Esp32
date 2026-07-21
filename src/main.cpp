@@ -144,11 +144,11 @@ void handleControl() {
   }
   if (server.hasArg("coolStop")) {
     float v = server.arg("coolStop").toFloat();
-    coolStop = constrain(v, safeMin, heatStop - 0.5);
+    coolStop = constrain(v, 0, 50);
   }
   if (server.hasArg("heatStop")) {
     float v = server.arg("heatStop").toFloat();
-    heatStop = constrain(v, coolStop + 0.5, safeMax);
+    heatStop = constrain(v, 0, 50);
   }
   if (server.hasArg("safeMin")) {
     float v = server.arg("safeMin").toFloat();
@@ -163,11 +163,6 @@ void handleControl() {
 }
 
 void handleTest() {
-  if (!systemOn) {
-    server.send(200, "application/json", "{\"ok\":false,\"message\":\"請先開啟系統\"}");
-    Serial.println("[TEST] 系統未開啟");
-    return;
-  }
   int fanVal = server.hasArg("fan") ? server.arg("fan").toInt() : -1;
   int coolVal = server.hasArg("cool") ? server.arg("cool").toInt() : -1;
   int heatVal = server.hasArg("heat") ? server.arg("heat").toInt() : -1;
@@ -265,8 +260,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
   <div class="pills">
     <div class="pill sys" id="pSys">待機</div>
-    <div class="pill cold" id="pCool" onclick="tTest('cool',220)">製冷</div>
-    <div class="pill hot" id="pHeat" onclick="tTest('heat',220)">加熱</div>
+    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
+    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
   </div>
   <div class="pills" style="margin-top:6px">
     <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
@@ -276,12 +271,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>溫度閾值</h2>
   <div class="fld">
     <label>高溫製冷</label>
-    <input type="range" min="15" max="35" step="1" value="28" id="hs" oninput="setHS(this.value)">
+    <input type="range" min="15" max="35" step="0.5" value="28" id="hs" oninput="setHS(this.value)">
     <span class="rv" id="hsv">28</span>
   </div>
   <div class="fld">
     <label>低溫加熱</label>
-    <input type="range" min="10" max="30" step="1" value="26" id="cs" oninput="setCS(this.value)">
+    <input type="range" min="10" max="30" step="0.5" value="26" id="cs" oninput="setCS(this.value)">
     <span class="rv" id="csvv">26</span>
   </div>
   <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜<span id="nmin">10</span>°C / ＞<span id="nmax">40</span>°C</div>
@@ -371,12 +366,13 @@ async function doPoll(){
     document.getElementById('pSys').className='pill sys'+(d.systemOn?' act':'');
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
+    _cooling=d.cooling;_heating=d.heating;
     document.getElementById('hs').value=d.heatStop;
-    document.getElementById('hsv').textContent=d.heatStop.toFixed(0);
+    document.getElementById('hsv').textContent=d.heatStop.toFixed(1);
     document.getElementById('cs').value=d.coolStop;
-    document.getElementById('csvv').textContent=d.coolStop.toFixed(0);
-    document.getElementById('nhs').textContent=d.heatStop.toFixed(0);
-    document.getElementById('ncs').textContent=d.coolStop.toFixed(0);
+    document.getElementById('csvv').textContent=d.coolStop.toFixed(1);
+    document.getElementById('nhs').textContent=d.heatStop.toFixed(1);
+    document.getElementById('ncs').textContent=d.coolStop.toFixed(1);
     document.getElementById('smin').value=d.safeMin;
     document.getElementById('sminV').textContent=d.safeMin;
     document.getElementById('smax').value=d.safeMax;
@@ -400,8 +396,8 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
-function setHS(v){document.getElementById('hsv').textContent=parseInt(v);fetch('/control?heatStop='+v);}
-function setCS(v){document.getElementById('csvv').textContent=parseInt(v);fetch('/control?coolStop='+v);}
+function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1);fetch('/control?heatStop='+v);}
+function setCS(v){document.getElementById('csvv').textContent=parseFloat(v).toFixed(1);fetch('/control?coolStop='+v);}
 function setSMin(v){document.getElementById('sminV').textContent=v;document.getElementById('nmin').textContent=v;fetch('/control?safeMin='+v);}
 function setSMax(v){document.getElementById('smaxV').textContent=v;document.getElementById('nmax').textContent=v;fetch('/control?safeMax='+v);}
 function setFanM(v){fm=true;document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);setTimeout(function(){fm=false;},3000);}
@@ -411,6 +407,17 @@ async function tTest(type,val){
     var r=await fetch(url),d=await r.json();
     if(d.ok)toast(type==='cool'?(d.cool==='true'?'製冷已開':'製冷已關'):(d.heat==='true'?'加熱已開':'加熱已關'));
   }catch(e){toast('操作失敗');}
+}
+var _cooling=false,_heating=false;
+function toggleCool(){
+  _cooling=!_cooling;
+  if(_cooling){_heating=false;tTest('cool',220);}
+  else{tTest('cool',0);}
+}
+function toggleHeat(){
+  _heating=!_heating;
+  if(_heating){_cooling=false;tTest('heat',220);}
+  else{tTest('heat',0);}
 }
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
 function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
