@@ -404,9 +404,8 @@ function setFanM(v){fm=true;document.getElementById('fanV').textContent=v;fetch(
 async function tTest(type,val){
   try{
     var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
-    var r=await fetch(url),d=await r.json();
-    if(d.ok)toast(type==='cool'?(d.cool==='true'?'製冷已開':'製冷已關'):(d.heat==='true'?'加熱已開':'加熱已關'));
-  }catch(e){toast('操作失敗');}
+    await fetch(url);
+  }catch(e){}
 }
 var _cooling=false,_heating=false;
 function toggleCool(){
