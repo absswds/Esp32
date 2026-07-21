@@ -29,6 +29,8 @@ bool systemOn = false;
 bool cooling = false;
 bool heating = false;
 bool bmeOk = false;
+bool fanManual = false;
+bool tecManual = false;
 
 float safeMin = 10.0;
 float safeMax = 40.0;
@@ -50,32 +52,36 @@ void stopAll() {
   setFan(0);
   setTec(0, 0);
   digitalWrite(TEC_EN, LOW);
-  Serial.printf("[SYS] 停止");
+  fanManual = false;
+  tecManual = false;
+  Serial.println("[SYS] 停止");
 }
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
   setFan(100);
+  fanManual = false;
+  tecManual = false;
   Serial.println("[SYS] 啟動");
 }
 
 void controlTemp() {
-  if (!systemOn || isnan(t)) return;
+  if (!systemOn || isnan(t) || tecManual) return;
   if (t < safeMin || t > safeMax) {
     setTec(0, 0);
-    setFan(t > safeMax ? 255 : 60);
+    if (!fanManual) setFan(t > safeMax ? 255 : 60);
     Serial.println("[SAFE] 極端溫度");
     return;
   }
   if (t >= heatStop) {
     setTec(220, 0);
-    setFan(255);
+    if (!fanManual) setFan(255);
   } else if (t <= coolStop) {
     setTec(0, 200);
-    setFan(200);
+    if (!fanManual) setFan(200);
   } else {
     setTec(0, 0);
-    setFan(100);
+    if (!fanManual) setFan(100);
   }
 }
 
@@ -156,9 +162,13 @@ void handleTest() {
   int enVal = server.hasArg("en") ? server.arg("en").toInt() : -1;
 
   if (enVal >= 0) digitalWrite(TEC_EN, enVal ? HIGH : LOW);
-  if (fanVal >= 0) setFan(fanVal);
+  if (fanVal >= 0) {
+    setFan(fanVal);
+    fanManual = true;
+  }
   if (coolVal >= 0 || heatVal >= 0) {
     setTec(max(0, coolVal), max(0, heatVal));
+    tecManual = true;
   }
 
   char buf[128];
@@ -293,7 +303,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=120,ms=2000,pi=null;
+var H=[],M=120,ms=2000,pi=null,fm=false;
 var cv=document.getElementById('chart'),cx=cv.getContext('2d');
 function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dC();}
 window.addEventListener('resize',rs);
@@ -358,8 +368,10 @@ async function doPoll(){
     document.getElementById('smaxV').textContent=d.safeMax;
     document.getElementById('nmin').textContent=d.safeMin;
     document.getElementById('nmax').textContent=d.safeMax;
-    document.getElementById('fanV').textContent=d.fanSpeed;
-    document.getElementById('fanS').value=d.fanSpeed;
+    if(!fm){
+      document.getElementById('fanV').textContent=d.fanSpeed;
+      document.getElementById('fanS').value=d.fanSpeed;
+    }
     H.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     dC();
@@ -368,12 +380,12 @@ async function doPoll(){
     document.getElementById('dot').className='dot err';
   }
 }
-function toggleSys(){var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
+function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
 function setHS(v){document.getElementById('hsv').textContent=parseInt(v);fetch('/control?heatStop='+v);}
 function setCS(v){document.getElementById('csvv').textContent=parseInt(v);fetch('/control?coolStop='+v);}
 function setSMin(v){document.getElementById('sminV').textContent=v;document.getElementById('nmin').textContent=v;fetch('/control?safeMin='+v);}
 function setSMax(v){document.getElementById('smaxV').textContent=v;document.getElementById('nmax').textContent=v;fetch('/control?safeMax='+v);}
-function setFanM(v){document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);}
+function setFanM(v){fm=true;document.getElementById('fanV').textContent=v;fetch('/test?fan='+v);setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
   try{
     var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
