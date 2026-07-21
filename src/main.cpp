@@ -52,12 +52,13 @@ void stopAll() {
   setFan(0);
   setTec(0, 0);
   digitalWrite(TEC_EN, LOW);
+  Serial.println("[SYS] 停止: TEC=OFF Fan=OFF");
 }
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
   setFan(100);
-  Serial.println("System ON");
+  Serial.printf("[SYS] 啟動: EN=ON Fan=100\n");
 }
 
 void controlTemp() {
@@ -92,9 +93,13 @@ int calcAqi(float gas) {
 }
 
 void readSensor() {
-  if (!bmeOk) return;
+  if (!bmeOk) {
+    Serial.printf("[BME688] 未連線 | SYS:%s | Fan:%d\n",
+                  systemOn ? "ON" : "OFF", fanSpeed);
+    return;
+  }
   if (!bme.performReading()) {
-    Serial.println("read fail");
+    Serial.println("[BME688] 讀取失敗，停止感測");
     bmeOk = false;
     return;
   }
@@ -104,8 +109,11 @@ void readSensor() {
   g = bme.gas_resistance / 1000.0;
   aqi = calcAqi(g);
   controlTemp();
-  Serial.printf("T:%.1f H:%.1f P:%.1f G:%.1f AQI:%d Fan:%d Cool:%d Heat:%d\n",
-                t, h, p, g, aqi, fanSpeed, cooling, heating);
+  Serial.printf("[SENSOR] T:%.1f H:%.1f P:%.1f AQI:%d | SYS:%s %s | Fan:%d EN:%d\n",
+                t, h, p, aqi,
+                systemOn ? "ON" : "OFF",
+                cooling ? "COOL" : heating ? "HEAT" : "IDLE",
+                fanSpeed, digitalRead(TEC_EN));
 }
 
 void sendJson(const char* msg) {
