@@ -102,178 +102,197 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BME688 環境監測</title>
+<title>BME688 Monitor</title>
 <style>
-:root{--bg:#0b1220;--card:rgba(30,41,59,.6);--border:rgba(148,163,184,.12);--txt:#e2e8f0;--txt2:#94a3b8;--acc:#60a5fa;--good:#22c55e;--bad:#f87171;}
 *{box-sizing:border-box;margin:0;padding:0}
-body{min-height:100vh;font-family:system-ui,-apple-system,sans-serif;background:radial-gradient(1200px 600px at 80% -10%,rgba(96,165,250,.10),transparent),var(--bg);color:var(--txt);padding:16px;max-width:680px;margin:0 auto}
-.hero{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:18px 22px;border-radius:18px;background:var(--card);backdrop-filter:blur(16px);border:1px solid var(--border);margin-bottom:16px}
-.hero h1{font-size:1.15rem;font-weight:700;letter-spacing:.3px}
-.hero h1 span{color:var(--acc)}
-.status-wrap{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--txt2)}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 8px var(--good)}
-.dot.err{background:var(--bad);box-shadow:0 0 8px var(--bad)}
-.pills{display:flex;gap:2px;background:rgba(15,23,42,.5);border:1px solid var(--border);border-radius:10px;padding:3px}
-.pill{border:none;background:transparent;color:var(--txt2);padding:5px 12px;border-radius:8px;cursor:pointer;font-size:.8rem}
-.pill.active{background:var(--acc);color:#fff;font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
-.m{background:var(--card);backdrop-filter:blur(12px);border:1px solid var(--border);border-radius:14px;padding:14px 10px;text-align:center;transition:transform .15s}
-.m:hover{transform:translateY(-2px)}
-.m .v{font-size:1.55rem;font-weight:700;line-height:1.1}
-.m .l{font-size:.72rem;color:var(--txt2);margin-top:4px}
-.trend{font-size:.7rem;margin-left:4px}
-.up{color:var(--bad)}.down{color:var(--good)}.flat{color:var(--txt2)}
-.t{color:#f87171}.hh{color:#60a5fa}.p{color:#22c55e}.g{color:#fbbf24}
-.card{background:var(--card);backdrop-filter:blur(14px);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:16px}
-.card h2{font-size:.85rem;color:var(--txt2);font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px}
-.legend label{display:flex;align-items:center;gap:5px;font-size:.78rem;cursor:pointer;user-select:none}
-.sw{width:14px;height:3px;border-radius:2px}
-canvas{width:100%;height:200px;display:block}
-.fan-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-button{background:var(--acc);color:#fff;border:none;border-radius:9px;padding:8px 16px;cursor:pointer;font-size:.85rem;font-weight:600;transition:filter .15s}
-button:hover{filter:brightness(1.08)}
-button.ghost{background:rgba(148,163,184,.15);color:var(--txt)}
-button.on{background:var(--good)}
-input[type=range]{flex:1;min-width:130px;accent-color:var(--acc)}
-input[type=number]{width:72px;background:rgba(15,23,42,.6);border:1px solid var(--border);color:var(--txt);border-radius:8px;padding:6px 8px;font-size:.9rem}
-table{width:100%;border-collapse:collapse;font-size:.78rem}
-th,td{padding:5px 6px;text-align:center;border-bottom:1px solid var(--border);white-space:nowrap}
-th{color:var(--txt2);font-weight:600}
-.hist-wrap{max-height:260px;overflow:auto;margin-bottom:10px;border-radius:8px}
-@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.m .v{font-size:1.35rem}}
+:root{--bg:#0f1318;--sf:#161b22;--bd:#2d333b;--tx:#e6edf3;--t2:#8b949e;--t3:#484f58;--r:#f85149;--b:#58a6ff;--g:#3fb950;--a:#d29922;--c:#39d2c0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:16px 20px;max-width:1040px;margin:0 auto;line-height:1.4}
+.row{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid var(--bd);margin-bottom:14px}
+.row h1{font-size:1.05rem;font-weight:600}
+.row h1 b{color:var(--c)}
+.st{display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--t2)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--g);flex-shrink:0}
+.dot.err{background:var(--r)}
+.pw{text-align:center;margin-bottom:14px}
+.pg{display:inline-flex;background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:2px;gap:1px}
+.pg button{border:none;background:0 0;color:var(--t3);padding:4px 13px;border-radius:3px;cursor:pointer;font-size:.75rem;font-weight:500}
+.pg button.on{background:var(--c);color:#000;font-weight:600}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px}
+.mc{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:12px 10px 8px;text-align:center;position:relative;overflow:hidden}
+.mc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.mc.a::after{background:var(--r)}.mc.b::after{background:var(--b)}.mc.c::after{background:var(--g)}.mc.d::after{background:var(--a)}
+.mc .v{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.mc .l{font-size:.62rem;color:var(--t3);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+.cT{color:var(--r)}.cH{color:var(--b)}.cP{color:var(--g)}.cG{color:var(--a)}
+.tr{font-size:.55rem;margin-left:2px;vertical-align:super}
+.up{color:var(--r)}.dn{color:var(--g)}.fl{color:var(--t3)}
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:14px;margin-bottom:10px}
+.sec h2{font-size:.68rem;color:var(--t3);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px}
+.lg{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.lg label{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--t2);cursor:pointer;user-select:none}
+.lg label:hover{color:var(--tx)}
+.lg span{width:12px;height:2px;border-radius:1px}
+input[type=checkbox]{appearance:none;-webkit-appearance:none;width:12px;height:12px;border:1.5px solid var(--t3);border-radius:2px;cursor:pointer;position:relative;flex-shrink:0}
+input[type=checkbox]:checked{border-color:var(--g);background:var(--g)}
+input[type=checkbox]:checked::after{content:'';position:absolute;left:2px;top:-1px;width:3px;height:5px;border:solid #000;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+canvas{width:100%;height:180px;display:block}
+.fn{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.fb{padding:5px 16px;border-radius:3px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.78rem;font-weight:500}
+.fb.on{background:var(--g);color:#000;border-color:var(--g)}
+.fb:hover:not(.on){border-color:var(--t3)}
+.fv{width:1px;height:18px;background:var(--bd)}
+.fl{font-size:.75rem;color:var(--t3)}
+input[type=range]{flex:1;min-width:130px;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--c);cursor:pointer}
+input[type=number]{width:58px;background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:3px;padding:4px;font-size:.82rem;text-align:center;outline:none}
+input[type=number]:focus{border-color:var(--c)}
+.fp{font-size:.9rem;font-weight:700;color:var(--c);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-size:.72rem;font-variant-numeric:tabular-nums}
+th{color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.3px;font-size:.65rem;padding:5px 6px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--sf);z-index:1}
+td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);white-space:nowrap}
+.hw{max-height:220px;overflow:auto;margin-bottom:8px;border:1px solid var(--bd);border-radius:3px}
+.hw::-webkit-scrollbar{width:3px}
+.hw::-webkit-scrollbar-thumb{background:var(--t3);border-radius:2px}
+.gbtn{background:0 0;color:var(--t3);border:1px solid var(--bd);border-radius:3px;padding:5px 12px;cursor:pointer;font-size:.75rem;font-weight:500}
+.gbtn:hover{border-color:var(--t3);color:var(--t2)}
+@media(max-width:640px){.g3{grid-template-columns:1fr 1fr}.mc .v{font-size:1.3rem}}
 </style>
 </head>
 <body>
-<div class="hero">
-  <h1>BME688 <span>環境監測</span></h1>
-  <div class="status-wrap"><span class="dot" id="dot"></span><span id="st">等待連線...</span></div>
+<div class="row">
+  <h1><b>BME688</b> Monitor</h1>
+  <div class="st"><span class="dot" id="dot"></span><span id="st">Connecting...</span></div>
 </div>
-<div class="pills" style="justify-self:center;margin:0 auto 16px;display:flex">
-  <button class="pill" data-ms="1000">1s</button>
-  <button class="pill active" data-ms="2000">2s</button>
-  <button class="pill" data-ms="5000">5s</button>
+<div class="pw"><div class="pg">
+  <button onclick="setPoll(1000,this)">1s</button>
+  <button class="on" onclick="setPoll(2000,this)">2s</button>
+  <button onclick="setPoll(5000,this)">5s</button>
+</div></div>
+<div class="g3">
+  <div class="mc a"><div class="v cT" id="mT">--</div><div class="l">Temp C <span class="tr" id="tT"></span></div></div>
+  <div class="mc b"><div class="v cH" id="mH">--</div><div class="l">Humidity % <span class="tr" id="tH"></span></div></div>
+  <div class="mc c"><div class="v cP" id="mP">--</div><div class="l">hPa <span class="tr" id="tP"></span></div></div>
+  <div class="mc d"><div class="v cG" id="mG">--</div><div class="l">Gas kOhm <span class="tr" id="tG"></span></div></div>
+  <div class="mc"><div class="v" id="mA" style="color:var(--a)">--</div><div class="l">AQI</div></div>
+  <div class="mc"><div class="v" id="mF" style="color:var(--c)">--</div><div class="l">Fan</div></div>
 </div>
-<div class="grid">
-  <div class="m"><div class="v t" id="mT">--<span class="trend" id="tT"></span></div><div class="l">溫度 °C</div></div>
-  <div class="m"><div class="v hh" id="mH">--<span class="trend" id="tH"></span></div><div class="l">濕度 %</div></div>
-  <div class="m"><div class="v p" id="mP">--<span class="trend" id="tP"></span></div><div class="l">氣壓 hPa</div></div>
-  <div class="m"><div class="v g" id="mG">--<span class="trend" id="tG"></span></div><div class="l">氣體 kΩ</div></div>
-  <div class="m"><div class="v" id="mA">--</div><div class="l">AQI</div></div>
-  <div class="m"><div class="v" id="mF">--</div><div class="l">風扇 %</div></div>
+<div class="sec">
+  <h2>Trend</h2>
+  <div class="lg" id="leg"></div>
+  <canvas id="cvs" width="800" height="180"></canvas>
 </div>
-<div class="card">
-  <h2>趨勢圖</h2>
-  <div class="legend" id="legend"></div>
-  <canvas id="chart" width="600" height="200"></canvas>
-</div>
-<div class="card">
-  <h2>風扇控制</h2>
-  <div class="fan-row">
-    <button id="autoBtn" class="on" onclick="toggleAuto()">自動</button>
-    <label style="font-size:.82rem;color:var(--txt2)">目標</label>
-    <input type="number" id="tgt" min="10" max="40" step="0.5" value="25" onchange="setTarget(this.value)">
-    <span style="font-size:.82rem;color:var(--txt2)">°C</span>
-    <input type="range" min="0" max="100" value="0" id="slider" oninput="setManual(this.value)">
-    <span id="fanPct" style="min-width:42px;text-align:right;font-weight:600">0%</span>
+<div class="sec">
+  <h2>Fan Control</h2>
+  <div class="fn">
+    <button class="fb on" id="ab" onclick="toggleAuto()">Auto</button>
+    <div class="fv"></div>
+    <span class="fl">Target</span>
+    <input type="number" id="tgt" min="10" max="40" step="0.5" value="25" onchange="setTgt(this.value)">
+    <span class="fl">C</span>
+    <div class="fv"></div>
+    <input type="range" min="0" max="100" value="0" id="sl" oninput="setMan(this.value)">
+    <span class="fp" id="fp">0%</span>
   </div>
 </div>
-<div class="card">
-  <h2>歷史資料</h2>
-  <div class="hist-wrap"><table id="hist"><thead><tr><th>時間</th><th>溫度</th><th>濕度</th><th>氣壓</th><th>氣體</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
-  <button class="ghost" onclick="clearHist()">清除</button>
-  <button class="ghost" style="margin-left:6px" onclick="exportCSV()">匯出 CSV</button>
+<div class="sec">
+  <h2>History</h2>
+  <div class="hw"><table id="ht"><thead><tr><th>Time</th><th>Temp</th><th>Hum</th><th>hPa</th><th>Gas</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
+  <div style="display:flex;gap:6px">
+    <button class="gbtn" onclick="clearH()">Clear</button>
+    <button class="gbtn" onclick="exportCSV()">CSV</button>
+  </div>
 </div>
 <script>
-var hist=[],autoMode=true,pollMs=2000,tid=null;
-var KEYS=['T','H','P','G'],COLORS={T:'#f87171',H:'#60a5fa',P:'#22c55e',G:'#fbbf24'},LABELS={T:'溫度',H:'濕度',P:'氣壓',G:'氣體'};
-var vis={T:true,H:true,P:false,G:false};
-var cvs=document.getElementById('chart'),ctx=cvs.getContext('2d');
-var prev={T:null,H:null,P:null,G:null};
+var hist=[],am=1,pm=2000,ti=null;
+var K=['T','H','P','G'],CO={T:'#f85149',H:'#58a6ff',P:'#3fb950',G:'#d29922'},LA={T:'Temp',H:'Hum',P:'hPa',G:'Gas'};
+var vs={T:1,H:1,P:0,G:0};
+var cv=document.getElementById('cvs'),cx=cv.getContext('2d');
+var pv={T:null,H:null,P:null,G:null};
 
-function resize(){var r=cvs.getBoundingClientRect();cvs.width=r.width*devicePixelRatio;cvs.height=r.height*devicePixelRatio;ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);draw();}
-window.addEventListener('resize',resize);
+function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dr();}
+window.addEventListener('resize',rs);
 
-function trendIcon(cur,k){
-  var p=prev[k];prev[k]=cur;
-  if(p===null||isNaN(cur)||isNaN(p))return '';
-  var d=cur-p;
-  if(Math.abs(d)<0.05)return '<span class="trend flat">—</span>';
-  return d>0?'<span class="trend up">↑</span>':'<span class="trend down">↓</span>';
-}
+function ti2(c,k){var p=pv[k];pv[k]=c;if(p===null||isNaN(c)||isNaN(p))return'';var d=c-p;if(Math.abs(d)<0.05)return'<span class="tr fl">&mdash;</span>';return d>0?'<span class="tr up">&#8593;</span>':'<span class="tr dn">&#8595;</span>';}
 
-function draw(){
-  var W=cvs.getBoundingClientRect().width,H=cvs.getBoundingClientRect().height;
-  var pad={l:40,r:12,t:12,b:22};
-  ctx.clearRect(0,0,W,H);
-  if(hist.length<2){ctx.fillStyle='#64748b';ctx.font='13px system-ui';ctx.textAlign='center';ctx.fillText('等待資料累積中...',W/2,H/2);return;}
-  var usable=hist.slice().reverse();
-  var act=KEYS.filter(k=>vis[k]);
-  if(!act.length){ctx.fillStyle='#64748b';ctx.textAlign='center';ctx.fillText('請勾選要顯示的項目',W/2,H/2);return;}
-  var ranges={};
-  act.forEach(k=>{var arr=usable.map(r=>r[k]);ranges[k]={min:Math.min.apply(null,arr),max:Math.max.apply(null,arr)};if(ranges[k].min===ranges[k].max){ranges[k].min-=1;ranges[k].max+=1;}});
-  var plotW=W-pad.l-pad.r,plotH=H-pad.t-pad.b;
-  ctx.strokeStyle='rgba(148,163,184,.1)';ctx.lineWidth=1;ctx.fillStyle='#64748b';ctx.font='10px system-ui';ctx.textAlign='right';
-  for(var i=0;i<=4;i++){var y=pad.t+plotH*i/4;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(W-pad.r,y);ctx.stroke();ctx.fillText(String(i*25),pad.l-6,y+3);}
-  ctx.textAlign='center';
-  var step=plotW/Math.max(1,usable.length-1);
-  var xtick=Math.ceil(usable.length/6);
-  usable.forEach((r,i)=>{if(i%xtick===0||i===usable.length-1){var x=pad.l+step*i;ctx.fillText(r.time,x,H-pad.b+14);}});
-  act.forEach(k=>{
-    var rg=ranges[k];ctx.beginPath();ctx.strokeStyle=COLORS[k];ctx.lineWidth=2;ctx.lineJoin='round';
-    usable.forEach((r,i)=>{var x=pad.l+step*i;var y=pad.t+(1-(r[k]-rg.min)/(rg.max-rg.min))*plotH;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-    ctx.stroke();
+function dr(){
+  var W=cv.getBoundingClientRect().width,H=cv.getBoundingClientRect().height;
+  var pl=48,pr=14,pt=14,pb=24;
+  cx.clearRect(0,0,W,H);
+  if(hist.length<2){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('Collecting data...',W/2,H/2);return;}
+  var us=hist.slice().reverse();
+  var ac=K.filter(function(k){return vs[k];});
+  if(!ac.length){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('Select a metric',W/2,H/2);return;}
+  var mn=Infinity,mx=-Infinity;
+  ac.forEach(function(k){us.forEach(function(r){if(r[k]<mn)mn=r[k];if(r[k]>mx)mx=r[k];});});
+  var sp=mx-mn;if(sp===0){mn-=1;mx+=1;sp=2;}
+  var pa=sp*.06;mn-=pa;mx+=pa;sp=mx-mn;
+  var pw=W-pl-pr,ph=H-pt-pb;
+
+  cx.strokeStyle='rgba(139,148,158,.08)';cx.lineWidth=1;
+  cx.fillStyle='#484f58';cx.font='10px system-ui';cx.textAlign='right';
+  for(var i=0;i<=4;i++){var v=mx-(sp*i/4);var y=pt+ph*i/4;cx.beginPath();cx.moveTo(pl,y);cx.lineTo(W-pr,y);cx.stroke();cx.fillText(v<10?v.toFixed(1):v<100?v.toFixed(1):Math.round(v),pl-6,y+3);}
+
+  cx.textAlign='center';cx.fillStyle='#484f58';cx.font='9px system-ui';
+  var st=pw/Math.max(1,us.length-1);
+  var xt=Math.max(1,Math.ceil(us.length/7));
+  us.forEach(function(r,i){if(i%xt===0||i===us.length-1){cx.fillText(r.time,pl+st*i,H-pb+14);}});
+
+  ac.forEach(function(k){
+    cx.beginPath();cx.strokeStyle=CO[k];cx.lineWidth=2;cx.lineJoin='round';
+    us.forEach(function(r,i){var x=pl+st*i;var y=pt+(1-(r[k]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
+    cx.stroke();
+    var la=us[us.length-1];var lx=pl+st*(us.length-1);var ly=pt+(1-(la[k]-mn)/sp)*ph;
+    cx.beginPath();cx.arc(lx,ly,3,0,Math.PI*2);cx.fillStyle=CO[k];cx.fill();
   });
 }
 
-function buildLegend(){
-  document.getElementById('legend').innerHTML=KEYS.map(k=>'<label><input type="checkbox" '+(vis[k]?'checked':'')+' onchange="vis.'+k+'=this.checked;draw()"><span class="sw" style="background:'+COLORS[k]+'"></span>'+LABELS[k]+'</label>').join('');
-}
+function bld(){document.getElementById('leg').innerHTML=K.map(function(k){return'<label><input type="checkbox" '+(vs[k]?'checked':'')+' onchange="vs.'+k+'=this.checked?1:0;dr()"><span style="background:'+CO[k]+'"></span>'+LA[k]+'</label>';}).join('');}
 
-function renderHist(){
-  document.querySelector('#hist tbody').innerHTML=hist.map(r=>'<tr><td>'+r.time+'</td><td>'+r.T.toFixed(1)+'</td><td>'+r.H.toFixed(1)+'</td><td>'+r.P.toFixed(1)+'</td><td>'+r.G.toFixed(1)+'</td><td>'+r.A+'</td></tr>').join('');
-}
+function rH(){document.querySelector('#ht tbody').innerHTML=hist.map(function(r){return'<tr><td>'+r.time+'</td><td>'+r.T.toFixed(1)+'</td><td>'+r.H.toFixed(1)+'</td><td>'+r.P.toFixed(1)+'</td><td>'+r.G.toFixed(1)+'</td><td>'+r.A+'</td></tr>';}).join('');}
 
 async function poll(){
   try{
-    var r=await fetch('/data');
-    var d=await r.json();
+    var r=await fetch('/data');var d=await r.json();
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
-    document.getElementById('st').textContent='最後更新 '+new Date().toLocaleTimeString();
-    document.getElementById('mT').innerHTML=d.temperature.toFixed(1)+trendIcon(d.temperature,'T');
-    document.getElementById('mH').innerHTML=d.humidity.toFixed(1)+trendIcon(d.humidity,'H');
-    document.getElementById('mP').innerHTML=d.pressure.toFixed(1)+trendIcon(d.pressure,'P');
-    document.getElementById('mG').innerHTML=d.gas.toFixed(1)+trendIcon(d.gas,'G');
+    document.getElementById('st').textContent=new Date().toLocaleTimeString();
+    document.getElementById('mT').innerHTML=d.temperature.toFixed(1);
+    document.getElementById('tT').innerHTML=ti2(d.temperature,'T');
+    document.getElementById('mH').innerHTML=d.humidity.toFixed(1);
+    document.getElementById('tH').innerHTML=ti2(d.humidity,'H');
+    document.getElementById('mP').innerHTML=d.pressure.toFixed(1);
+    document.getElementById('tP').innerHTML=ti2(d.pressure,'P');
+    document.getElementById('mG').innerHTML=d.gas.toFixed(1);
+    document.getElementById('tG').innerHTML=ti2(d.gas,'G');
     document.getElementById('mA').textContent=d.aqi;
     var fp=Math.round(d.fanSpeed/255*100);
     document.getElementById('mF').textContent=fp+'%';
-    autoMode=d.auto;
-    document.getElementById('autoBtn').className=autoMode?'on':'ghost';
-    document.getElementById('slider').value=fp;
-    document.getElementById('fanPct').textContent=fp+'%';
+    am=d.auto;
+    document.getElementById('ab').className=am?'fb on':'fb';
+    document.getElementById('sl').value=fp;
+    document.getElementById('fp').textContent=fp+'%';
     document.getElementById('tgt').value=d.target;
     hist.unshift({time:new Date().toLocaleTimeString(),T:d.temperature,H:d.humidity,P:d.pressure,G:d.gas,A:d.aqi});
     if(hist.length>60)hist.pop();
-    renderHist();draw();
+    rH();dr();
   }catch(e){
-    document.getElementById('st').textContent='更新失敗';
+    document.getElementById('st').textContent='Error';
     document.getElementById('dot').className='dot err';
   }
 }
 
-function startPoll(){if(tid)clearInterval(tid);poll();tid=setInterval(poll,pollMs);}
-function toggleAuto(){autoMode=!autoMode;fetch('/fan?auto='+(autoMode?1:0));document.getElementById('autoBtn').className=autoMode?'on':'ghost';}
-function setTarget(v){fetch('/fan?target='+v);}
-function setManual(v){if(autoMode)return;document.getElementById('fanPct').textContent=v+'%';fetch('/fan?speed='+v);}
-function clearHist(){hist=[];renderHist();draw();}
+function go(){if(ti)clearInterval(ti);poll();ti=setInterval(poll,pm);}
+function setPoll(ms,b){document.querySelectorAll('.pg button').forEach(function(x){x.className='';});b.className='on';pm=ms;go();}
+function toggleAuto(){am=!am;fetch('/fan?auto='+(am?1:0));document.getElementById('ab').className=am?'fb on':'fb';}
+function setTgt(v){fetch('/fan?target='+v);}
+function setMan(v){if(am)return;document.getElementById('fp').textContent=v+'%';fetch('/fan?speed='+v);}
+function clearH(){hist=[];rH();dr();}
 function exportCSV(){
-  if(!hist.length){alert('尚無資料');return;}
-  var csv='\uFEFF時間,溫度,濕度,氣壓,氣體,AQI\n'+hist.map(r=>r.time+','+r.T+','+r.H+','+r.P+','+r.G+','+r.A).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='BME688.csv';a.click();
+  if(!hist.length)return;
+  var c='\uFEFFTime,Temp,Hum,hPa,Gas,AQI\n'+hist.map(function(r){return r.time+','+r.T+','+r.H+','+r.P+','+r.G+','+r.A;}).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='BME688.csv';a.click();
 }
-document.querySelectorAll('.pill').forEach(b=>b.onclick=()=>{document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));b.classList.add('active');pollMs=parseInt(b.dataset.ms);startPoll();});
-buildLegend();resize();startPoll();
+bld();rs();go();
 </script>
 </body>
 </html>)HTML";
