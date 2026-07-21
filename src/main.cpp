@@ -131,7 +131,7 @@ void handleControl() {
   }
   if (server.hasArg("coolStop")) {
     float v = server.arg("coolStop").toFloat();
-    coolStop = constrain(v, SAFE_MIN, heatStop - 0.5);
+    coolStop = constrain(v, safeMin, heatStop - 0.5);
   }
   if (server.hasArg("heatStop")) {
     float v = server.arg("heatStop").toFloat();
