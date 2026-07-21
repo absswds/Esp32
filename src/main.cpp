@@ -29,6 +29,7 @@ unsigned long lastRead = 0;
 bool systemOn = false;
 bool cooling = false;
 bool heating = false;
+bool bmeOk = false;
 
 const float SAFE_MIN = 10.0;
 const float SAFE_MAX = 40.0;
@@ -92,8 +93,10 @@ int calcAqi(float gas) {
 }
 
 void readSensor() {
+  if (!bmeOk) return;
   if (!bme.performReading()) {
     Serial.println("read fail");
+    bmeOk = false;
     return;
   }
   t = bme.temperature;
@@ -114,7 +117,8 @@ void sendJson(const char* msg) {
 }
 
 void handleData() {
-  if (isnan(t)) { sendJson("無感測資料"); return; }
+  if (!bmeOk) { sendJson("BME688 未連線"); return; }
+  if (isnan(t)) { sendJson("等待感測資料..."); return; }
   char buf[320];
   snprintf(buf, sizeof(buf),
     "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f}",
@@ -273,6 +277,8 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Wire.begin();
+  Wire.setClock(100000);
+  Wire.setTimeOut(50);
 
   pinMode(TEC_EN, OUTPUT);
   digitalWrite(TEC_EN, LOW);
@@ -297,8 +303,10 @@ void setup() {
     bme.setPressureOversampling(BME680_OS_4X);
     bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
     bme.setGasHeater(320, 150);
+    bmeOk = true;
     Serial.println("BME688 OK");
   } else {
+    bmeOk = false;
     Serial.println("BME688 fail (check wiring, tried 0x77/0x76)");
   }
 
