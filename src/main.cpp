@@ -5,31 +5,81 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
 
-#define FAN_PIN 25
-#define FAN_CHANNEL 0
-#define FAN_FREQ 25000
-#define FAN_RES 8
+#define FAN_PIN 18
+#define TEC_EN 19
+#define TEC_LPWM 25  // 制冷
+#define TEC_RPWM 26  // 加热
+
+#define FAN_CH 0
+#define TEC_L_CH 1
+#define TEC_R_CH 2
+#define PWM_FREQ 25000
+#define PWM_RES 8
 
 Adafruit_BME680 bme;
 WebServer server(80);
 
 float t = NAN, h = NAN, p = NAN, g = NAN;
 int aqi = 0;
-bool fanAuto = true;
 int fanSpeed = 0;
-float target = 25.0;
-int failCount = 0;
+float coolStop = 26.0;  // ≤此温度停止制冷
+float heatStop = 28.0;   // ≥此温度停止加热
 unsigned long lastRead = 0;
-unsigned long lastReinit = 0;
+
+bool systemOn = false;
+bool cooling = false;
+bool heating = false;
+
+const float SAFE_MIN = 10.0;
+const float SAFE_MAX = 40.0;
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
-  ledcWrite(FAN_CHANNEL, fanSpeed);
+  ledcWrite(FAN_CH, fanSpeed);
 }
 
-void checkFan() {
-  if (!fanAuto || isnan(t)) return;
-  setFan(t > target ? 255 : 0);
+void setTec(int cool, int heat) {
+  cooling = cool > 0;
+  heating = heat > 0;
+  ledcWrite(TEC_L_CH, cool);
+  ledcWrite(TEC_R_CH, heat);
+}
+
+void stopAll() {
+  setFan(0);
+  setTec(0, 0);
+  digitalWrite(TEC_EN, LOW);
+}
+
+void startAll() {
+  digitalWrite(TEC_EN, HIGH);
+  setFan(100);
+}
+
+void controlTemp() {
+  if (!systemOn || isnan(t)) return;
+
+  // 安全保护：极端温度强制停 TEC
+  if (t < SAFE_MIN || t > SAFE_MAX) {
+    setTec(0, 0);
+    setFan(t > SAFE_MAX ? 255 : 60);
+    Serial.println("SAFE: extreme temp, TEC disabled");
+    return;
+  }
+
+  // 温度太高 → 制冷；温度太低 → 加热
+  if (t >= heatStop) {
+    int power = 220;
+    setTec(power, 0);
+    setFan(255);
+  } else if (t <= coolStop) {
+    int power = 200;
+    setTec(0, power);
+    setFan(map(power, 0, 255, 100, 200));
+  } else {
+    setTec(0, 0);
+    setFan(100);
+  }
 }
 
 int calcAqi(float gas) {
@@ -38,31 +88,22 @@ int calcAqi(float gas) {
   if (gas >= 600)  return map((int)gas, 600, 800, 100, 51);
   if (gas >= 400)  return map((int)gas, 400, 600, 200, 101);
   if (gas >= 200)  return map((int)gas, 200, 400, 300, 201);
-  return map((int)max(0.0f,gas), 0, 200, 500, 301);
+  return map((int)max(0.0f, gas), 0, 200, 500, 301);
 }
 
 void readSensor() {
-  if (!bme.begin(0x77)) {
-    Serial.println("BME688 not found");
-    return;
-  }
   if (!bme.performReading()) {
-    failCount++;
-    Serial.printf("read fail %d/5\n", failCount);
-    if (failCount >= 5) {
-      t = h = p = g = NAN; aqi = 0;
-      lastReinit = millis();
-    }
+    Serial.println("read fail");
     return;
   }
-  failCount = 0;
   t = bme.temperature;
   h = bme.humidity;
   p = bme.pressure / 100.0;
   g = bme.gas_resistance / 1000.0;
   aqi = calcAqi(g);
-  checkFan();
-  Serial.printf("T:%.1f H:%.1f P:%.1f G:%.1f AQI:%d Fan:%d\n", t, h, p, g, aqi, fanSpeed);
+  controlTemp();
+  Serial.printf("T:%.1f H:%.1f P:%.1f G:%.1f AQI:%d Fan:%d Cool:%d Heat:%d\n",
+                t, h, p, g, aqi, fanSpeed, cooling, heating);
 }
 
 void sendJson(const char* msg) {
@@ -74,26 +115,27 @@ void sendJson(const char* msg) {
 
 void handleData() {
   if (isnan(t)) { sendJson("無感測資料"); return; }
-  char buf[256];
+  char buf[320];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"auto\":%s,\"target\":%.1f}",
-    t, h, p, g, aqi, fanSpeed, fanAuto ? "true" : "false", target);
+    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f}",
+    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", coolStop, heatStop);
   server.send(200, "application/json", buf);
 }
 
-void handleFan() {
-  if (server.hasArg("speed")) {
-    fanAuto = false;
-    setFan(server.arg("speed").toInt() * 255 / 100);
+void handleControl() {
+  if (server.hasArg("system")) {
+    systemOn = server.arg("system").toInt() == 1;
+    if (systemOn) startAll(); else stopAll();
   }
-  if (server.hasArg("auto")) {
-    fanAuto = server.arg("auto").toInt() == 1;
-    checkFan();
+  if (server.hasArg("coolStop")) {
+    float v = server.arg("coolStop").toFloat();
+    coolStop = constrain(v, SAFE_MIN, heatStop - 0.5);  // 强制 coolStop < heatStop，保留死区
   }
-  if (server.hasArg("target")) {
-    target = server.arg("target").toFloat();
-    checkFan();
+  if (server.hasArg("heatStop")) {
+    float v = server.arg("heatStop").toFloat();
+    heatStop = constrain(v, coolStop + 0.5, SAFE_MAX);  // 强制 heatStop > coolStop
   }
+  controlTemp();
   server.send(200, "text/plain", "OK");
 }
 
@@ -102,197 +144,123 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BME688 環境監測</title>
+<title>溫控系統</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0f1318;--sf:#161b22;--bd:#2d333b;--tx:#e6edf3;--t2:#8b949e;--t3:#484f58;--r:#f85149;--b:#58a6ff;--g:#3fb950;--a:#d29922;--c:#39d2c0}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:16px 20px;max-width:1040px;margin:0 auto;line-height:1.4}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:16px 20px;max-width:560px;margin:0 auto;line-height:1.5}
 .row{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid var(--bd);margin-bottom:14px}
-.row h1{font-size:1.05rem;font-weight:600}
+.row h1{font-size:1.1rem;font-weight:600}
 .row h1 b{color:var(--c)}
 .st{display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--t2)}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--g);flex-shrink:0}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--g);flex-shrink:0}
 .dot.err{background:var(--r)}
-.pw{text-align:center;margin-bottom:14px}
-.pg{display:inline-flex;background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:2px;gap:1px}
-.pg button{border:none;background:0 0;color:var(--t3);padding:4px 13px;border-radius:3px;cursor:pointer;font-size:.75rem;font-weight:500}
-.pg button.on{background:var(--c);color:#000;font-weight:600}
-.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px}
-.mc{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:12px 10px 8px;text-align:center;position:relative;overflow:hidden}
-.mc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.mc.a::after{background:var(--r)}.mc.b::after{background:var(--b)}.mc.c::after{background:var(--g)}.mc.d::after{background:var(--a)}
-.mc .v{font-size:1.6rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
-.mc .l{font-size:.62rem;color:var(--t3);margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
-.cT{color:var(--r)}.cH{color:var(--b)}.cP{color:var(--g)}.cG{color:var(--a)}
-.tr{font-size:.55rem;margin-left:2px;vertical-align:super}
-.up{color:var(--r)}.dn{color:var(--g)}.fl{color:var(--t3)}
-.sec{background:var(--sf);border:1px solid var(--bd);border-radius:4px;padding:14px;margin-bottom:10px}
-.sec h2{font-size:.68rem;color:var(--t3);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.8px}
-.lg{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px}
-.lg label{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--t2);cursor:pointer;user-select:none}
-.lg label:hover{color:var(--tx)}
-.lg span{width:12px;height:2px;border-radius:1px}
-input[type=checkbox]{appearance:none;-webkit-appearance:none;width:12px;height:12px;border:1.5px solid var(--t3);border-radius:2px;cursor:pointer;position:relative;flex-shrink:0}
-input[type=checkbox]:checked{border-color:var(--g);background:var(--g)}
-input[type=checkbox]:checked::after{content:'';position:absolute;left:2px;top:-1px;width:3px;height:5px;border:solid #000;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
-canvas{width:100%;height:180px;display:block}
-.fn{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.fb{padding:5px 16px;border-radius:3px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.78rem;font-weight:500}
-.fb.on{background:var(--g);color:#000;border-color:var(--g)}
-.fb:hover:not(.on){border-color:var(--t3)}
-.fv{width:1px;height:18px;background:var(--bd)}
-.fl{font-size:.75rem;color:var(--t3)}
-input[type=range]{flex:1;min-width:130px;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--c);cursor:pointer}
-input[type=number]{width:58px;background:var(--bg);border:1px solid var(--bd);color:var(--tx);border-radius:3px;padding:4px;font-size:.82rem;text-align:center;outline:none}
-input[type=number]:focus{border-color:var(--c)}
-.fp{font-size:.9rem;font-weight:700;color:var(--c);min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
-table{width:100%;border-collapse:collapse;font-size:.72rem;font-variant-numeric:tabular-nums}
-th{color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.3px;font-size:.65rem;padding:5px 6px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--sf);z-index:1}
-td{padding:4px 6px;text-align:center;border-bottom:1px solid rgba(45,51,59,.5);white-space:nowrap}
-.hw{max-height:220px;overflow:auto;margin-bottom:8px;border:1px solid var(--bd);border-radius:3px}
-.hw::-webkit-scrollbar{width:3px}
-.hw::-webkit-scrollbar-thumb{background:var(--t3);border-radius:2px}
-.gbtn{background:0 0;color:var(--t3);border:1px solid var(--bd);border-radius:3px;padding:5px 12px;cursor:pointer;font-size:.75rem;font-weight:500}
-.gbtn:hover{border-color:var(--t3);color:var(--t2)}
-@media(max-width:640px){.g3{grid-template-columns:1fr 1fr}.mc .v{font-size:1.3rem}}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px}
+.mc{background:var(--sf);border:1px solid var(--bd);border-radius:5px;padding:14px 10px;text-align:center}
+.mc .v{font-size:1.9rem;font-weight:700;line-height:1}
+.mc .l{font-size:.68rem;color:var(--t3);margin-top:5px;text-transform:uppercase;letter-spacing:.5px}
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:5px;padding:16px;margin-bottom:10px}
+.sec h2{font-size:.72rem;color:var(--t3);font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:.8px}
+.btn{width:100%;padding:14px;border-radius:5px;border:none;font-size:.95rem;font-weight:700;cursor:pointer}
+.btn.on{background:var(--r);color:#fff}
+.btn.off{background:var(--g);color:#000}
+.btn:active{opacity:.7}
+.sts{display:flex;gap:8px;margin-top:12px;font-size:.78rem}
+.sts .pill{flex:1;text-align:center;padding:6px;border-radius:4px;background:var(--bg);border:1px solid var(--bd)}
+.sts .pill.act{border-color:var(--c);color:var(--c)}
+.sts .pill.hot{border-color:var(--r);color:var(--r)}
+.sts .pill.cold{border-color:var(--b);color:var(--b)}
+.fld{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.fld label{font-size:.78rem;color:var(--t2);min-width:78px}
+.fld input[type=range]{flex:1;height:4px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
+.fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--c);cursor:pointer}
+.fld .val{font-size:.95rem;font-weight:700;color:var(--c);min-width:42px;text-align:right;font-variant-numeric:tabular-nums}
+.note{font-size:.72rem;color:var(--t3);line-height:1.6}
+.note b{color:var(--t2)}
 </style>
 </head>
 <body>
 <div class="row">
-  <h1><b>BME688</b> 環境監測</h1>
+  <h1><b>TEC</b> 溫控系統</h1>
   <div class="st"><span class="dot" id="dot"></span><span id="st">等待連線...</span></div>
 </div>
-<div class="pw"><div class="pg">
-  <button onclick="setPoll(1000,this)">1s</button>
-  <button class="on" onclick="setPoll(2000,this)">2s</button>
-  <button onclick="setPoll(5000,this)">5s</button>
-</div></div>
-<div class="g3">
-  <div class="mc a"><div class="v cT" id="mT">--</div><div class="l">溫度 °C <span class="tr" id="tT"></span></div></div>
-  <div class="mc b"><div class="v cH" id="mH">--</div><div class="l">濕度 % <span class="tr" id="tH"></span></div></div>
-  <div class="mc c"><div class="v cP" id="mP">--</div><div class="l">氣壓 hPa <span class="tr" id="tP"></span></div></div>
-  <div class="mc d"><div class="v cG" id="mG">--</div><div class="l">氣體 kΩ <span class="tr" id="tG"></span></div></div>
-  <div class="mc"><div class="v" id="mA" style="color:var(--a)">--</div><div class="l">AQI</div></div>
-  <div class="mc"><div class="v" id="mF" style="color:var(--c)">--</div><div class="l">風扇</div></div>
+<div class="g2">
+  <div class="mc"><div class="v" style="color:var(--r)" id="mT">--</div><div class="l">溫度 °C</div></div>
+  <div class="mc"><div class="v" style="color:var(--b)" id="mH">--</div><div class="l">濕度 %</div></div>
+  <div class="mc"><div class="v" style="color:var(--g)" id="mP">--</div><div class="l">氣壓 hPa</div></div>
+  <div class="mc"><div class="v" style="color:var(--a)" id="mA">--</div><div class="l">AQI</div></div>
 </div>
 <div class="sec">
-  <h2>趨勢圖</h2>
-  <div class="lg" id="leg"></div>
-  <canvas id="cvs" width="800" height="180"></canvas>
-</div>
-<div class="sec">
-  <h2>風扇控制</h2>
-  <div class="fn">
-    <button class="fb on" id="ab" onclick="toggleAuto()">自動</button>
-    <div class="fv"></div>
-    <span class="fl">目標</span>
-    <input type="number" id="tgt" min="10" max="40" step="0.5" value="25" onchange="setTgt(this.value)">
-    <span class="fl">C</span>
-    <div class="fv"></div>
-    <input type="range" min="0" max="100" value="0" id="sl" oninput="setMan(this.value)">
-    <span class="fp" id="fp">0%</span>
+  <h2>系統開關</h2>
+  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
+  <div class="sts">
+    <div class="pill" id="pSys">待機</div>
+    <div class="pill cold" id="pCool">製冷 關</div>
+    <div class="pill hot" id="pHeat">加熱 關</div>
   </div>
 </div>
 <div class="sec">
-  <h2>歷史資料</h2>
-  <div class="hw"><table id="ht"><thead><tr><th>時間</th><th>溫度</th><th>濕度</th><th>氣壓</th><th>氣體</th><th>AQI</th></tr></thead><tbody></tbody></table></div>
-  <div style="display:flex;gap:6px">
-    <button class="gbtn" onclick="clearH()">清除</button>
-    <button class="gbtn" onclick="exportCSV()">導出 CSV</button>
+  <h2>溫度設定</h2>
+  <div class="fld">
+    <label>高溫→製冷</label>
+    <input type="range" min="15" max="35" step="0.5" value="28" id="hs" oninput="setHS(this.value)">
+    <span class="val" id="hsv">28°C</span>
+  </div>
+  <div class="fld">
+    <label>低溫→加熱</label>
+    <input type="range" min="10" max="30" step="0.5" value="26" id="cs" oninput="setCS(this.value)">
+    <span class="val" id="csv">26°C</span>
+  </div>
+</div>
+<div class="sec">
+  <h2>運行說明</h2>
+  <div class="note">
+    <p>• <b>溫度＞<span id="nhs">28</span>°C</b> → 製冷啟動，風扇全速</p>
+    <p>• <b>溫度＜<span id="ncs">26</span>°C</b> → 加熱啟動，風扇中速</p>
+    <p>• 之間為恆溫區，TEC 關閉，風扇低速循環</p>
+    <p>• 🔬 論文設定：常溫 24°C → 蟄眠 15°C → 喚醒 24°C</p>
+    <p>• 🧪 測試建議：室溫 25°C 時，設製冷 28°C 即啟動降溫</p>
+    <p>• 安全保護 ＜10°C 或 ＞40°C 強制停 TEC</p>
   </div>
 </div>
 <script>
-var hist=[],am=1,pm=2000,ti=null;
-var K=['T','H','P','G'],CO={T:'#f85149',H:'#58a6ff',P:'#3fb950',G:'#d29922'},LA={T:'溫度',H:'濕度',P:'氣壓',G:'氣體'};
-var vs={T:1,H:1,P:0,G:0};
-var cv=document.getElementById('cvs'),cx=cv.getContext('2d');
-var pv={T:null,H:null,P:null,G:null};
-
-function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dr();}
-window.addEventListener('resize',rs);
-
-function ti2(c,k){var p=pv[k];pv[k]=c;if(p===null||isNaN(c)||isNaN(p))return'';var d=c-p;if(Math.abs(d)<0.05)return'<span class="tr fl">&mdash;</span>';return d>0?'<span class="tr up">&#8593;</span>':'<span class="tr dn">&#8595;</span>';}
-
-function dr(){
-  var W=cv.getBoundingClientRect().width,H=cv.getBoundingClientRect().height;
-  var pl=48,pr=14,pt=14,pb=24;
-  cx.clearRect(0,0,W,H);
-  if(hist.length<2){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('等待資料累積...',W/2,H/2);return;}
-  var us=hist.slice().reverse();
-  var ac=K.filter(function(k){return vs[k];});
-  if(!ac.length){cx.fillStyle='#484f58';cx.font='12px system-ui';cx.textAlign='center';cx.fillText('請勾選項目',W/2,H/2);return;}
-  var mn=Infinity,mx=-Infinity;
-  ac.forEach(function(k){us.forEach(function(r){if(r[k]<mn)mn=r[k];if(r[k]>mx)mx=r[k];});});
-  var sp=mx-mn;if(sp===0){mn-=1;mx+=1;sp=2;}
-  var pa=sp*.06;mn-=pa;mx+=pa;sp=mx-mn;
-  var pw=W-pl-pr,ph=H-pt-pb;
-
-  cx.strokeStyle='rgba(139,148,158,.08)';cx.lineWidth=1;
-  cx.fillStyle='#484f58';cx.font='10px system-ui';cx.textAlign='right';
-  for(var i=0;i<=4;i++){var v=mx-(sp*i/4);var y=pt+ph*i/4;cx.beginPath();cx.moveTo(pl,y);cx.lineTo(W-pr,y);cx.stroke();cx.fillText(v<10?v.toFixed(1):v<100?v.toFixed(1):Math.round(v),pl-6,y+3);}
-
-  cx.textAlign='center';cx.fillStyle='#484f58';cx.font='9px system-ui';
-  var st=pw/Math.max(1,us.length-1);
-  var xt=Math.max(1,Math.ceil(us.length/7));
-  us.forEach(function(r,i){if(i%xt===0||i===us.length-1){cx.fillText(r.time,pl+st*i,H-pb+14);}});
-
-  ac.forEach(function(k){
-    cx.beginPath();cx.strokeStyle=CO[k];cx.lineWidth=2;cx.lineJoin='round';
-    us.forEach(function(r,i){var x=pl+st*i;var y=pt+(1-(r[k]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
-    cx.stroke();
-    var la=us[us.length-1];var lx=pl+st*(us.length-1);var ly=pt+(1-(la[k]-mn)/sp)*ph;
-    cx.beginPath();cx.arc(lx,ly,3,0,Math.PI*2);cx.fillStyle=CO[k];cx.fill();
-  });
-}
-
-function bld(){document.getElementById('leg').innerHTML=K.map(function(k){return'<label><input type="checkbox" '+(vs[k]?'checked':'')+' onchange="vs.'+k+'=this.checked?1:0;dr()"><span style="background:'+CO[k]+'"></span>'+LA[k]+'</label>';}).join('');}
-
-function rH(){document.querySelector('#ht tbody').innerHTML=hist.map(function(r){return'<tr><td>'+r.time+'</td><td>'+r.T.toFixed(1)+'</td><td>'+r.H.toFixed(1)+'</td><td>'+r.P.toFixed(1)+'</td><td>'+r.G.toFixed(1)+'</td><td>'+r.A+'</td></tr>';}).join('');}
-
 async function poll(){
   try{
     var r=await fetch('/data');var d=await r.json();
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
-    document.getElementById('mT').innerHTML=d.temperature.toFixed(1);
-    document.getElementById('tT').innerHTML=ti2(d.temperature,'T');
-    document.getElementById('mH').innerHTML=d.humidity.toFixed(1);
-    document.getElementById('tH').innerHTML=ti2(d.humidity,'H');
-    document.getElementById('mP').innerHTML=d.pressure.toFixed(1);
-    document.getElementById('tP').innerHTML=ti2(d.pressure,'P');
-    document.getElementById('mG').innerHTML=d.gas.toFixed(1);
-    document.getElementById('tG').innerHTML=ti2(d.gas,'G');
+    document.getElementById('mT').textContent=d.temperature.toFixed(1);
+    document.getElementById('mH').textContent=d.humidity.toFixed(1);
+    document.getElementById('mP').textContent=d.pressure.toFixed(1);
     document.getElementById('mA').textContent=d.aqi;
-    var fp=Math.round(d.fanSpeed/255*100);
-    document.getElementById('mF').textContent=fp+'%';
-    am=d.auto;
-    document.getElementById('ab').className=am?'fb on':'fb';
-    document.getElementById('sl').value=fp;
-    document.getElementById('fp').textContent=fp+'%';
-    document.getElementById('tgt').value=d.target;
-    hist.unshift({time:new Date().toLocaleTimeString(),T:d.temperature,H:d.humidity,P:d.pressure,G:d.gas,A:d.aqi});
-    if(hist.length>60)hist.pop();
-    rH();dr();
+    document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
+    document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
+    var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'運轉中'):'待機';
+    document.getElementById('pSys').textContent=ps;
+    document.getElementById('pSys').className='pill'+(d.systemOn?' act':'');
+    document.getElementById('pCool').textContent='製冷 '+(d.cooling?'開':'關');
+    document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
+    document.getElementById('pHeat').textContent='加熱 '+(d.heating?'開':'關');
+    document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
+    document.getElementById('hs').value=d.heatStop;
+    document.getElementById('hsv').textContent=d.heatStop.toFixed(1)+'°C';
+    document.getElementById('cs').value=d.coolStop;
+    document.getElementById('csv').textContent=d.coolStop.toFixed(1)+'°C';
+    document.getElementById('nhs').textContent=d.heatStop.toFixed(1);
+    document.getElementById('ncs').textContent=d.coolStop.toFixed(1);
   }catch(e){
     document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
   }
 }
-
-function go(){if(ti)clearInterval(ti);poll();ti=setInterval(poll,pm);}
-function setPoll(ms,b){document.querySelectorAll('.pg button').forEach(function(x){x.className='';});b.className='on';pm=ms;go();}
-function toggleAuto(){am=!am;fetch('/fan?auto='+(am?1:0));document.getElementById('ab').className=am?'fb on':'fb';}
-function setTgt(v){fetch('/fan?target='+v);}
-function setMan(v){if(am)return;document.getElementById('fp').textContent=v+'%';fetch('/fan?speed='+v);}
-function clearH(){hist=[];rH();dr();}
-function exportCSV(){
-  if(!hist.length)return;
-  var c='\uFEFF時間,溫度,濕度,氣壓,氣體,AQI\n'+hist.map(function(r){return r.time+','+r.T+','+r.H+','+r.P+','+r.G+','+r.A;}).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='BME688.csv';a.click();
+function toggleSys(){
+  var on=document.getElementById('sysBtn').classList.contains('off');
+  fetch('/control?system='+(on?1:0));
 }
-bld();rs();go();
+function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?heatStop='+v);}
+function setCS(v){document.getElementById('csv').textContent=parseFloat(v).toFixed(1)+'°C';fetch('/control?coolStop='+v);}
+poll();setInterval(poll,2000);
 </script>
 </body>
 </html>)HTML";
@@ -306,15 +274,24 @@ void setup() {
   delay(500);
   Wire.begin();
 
-  ledcSetup(FAN_CHANNEL, FAN_FREQ, FAN_RES);
-  ledcAttachPin(FAN_PIN, FAN_CHANNEL);
-  setFan(0);
+  pinMode(TEC_EN, OUTPUT);
+  digitalWrite(TEC_EN, LOW);
 
-  WiFi.softAP("ESP32-BME688", "12345678");
+  ledcSetup(FAN_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(FAN_PIN, FAN_CH);
+  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(TEC_LPWM, TEC_L_CH);
+  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES);
+  ledcAttachPin(TEC_RPWM, TEC_R_CH);
+
+  setFan(0);
+  setTec(0, 0);
+
+  WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.print("AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  if (bme.begin(0x77)) {
+  if (bme.begin(0x77) || bme.begin(0x76)) {
     bme.setTemperatureOversampling(BME680_OS_2X);
     bme.setHumidityOversampling(BME680_OS_1X);
     bme.setPressureOversampling(BME680_OS_4X);
@@ -322,12 +299,12 @@ void setup() {
     bme.setGasHeater(320, 150);
     Serial.println("BME688 OK");
   } else {
-    Serial.println("BME688 fail");
+    Serial.println("BME688 fail (check wiring, tried 0x77/0x76)");
   }
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
-  server.on("/fan", handleFan);
+  server.on("/control", handleControl);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("Server started");
@@ -337,10 +314,6 @@ void loop() {
   server.handleClient();
   if (millis() - lastRead >= 2000) {
     lastRead = millis();
-    if (failCount >= 5 && millis() - lastReinit < 30000) {
-      // cooldown
-    } else {
-      readSensor();
-    }
+    readSensor();
   }
 }
