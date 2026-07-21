@@ -633,10 +633,8 @@ startPoll();
 
 void handleRoot() {
   Serial.println("收到網頁請求");
-  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-  server.send(200, "text/html; charset=utf-8", "");
   String html = buildHtml();
-  server.sendContent(html);
+  server.send(200, "text/html; charset=utf-8", html);
   Serial.println("網頁發送完成");
 }
 
