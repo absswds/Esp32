@@ -60,8 +60,7 @@ void updateFanAuto() {
   }
 }
 
-String buildHtml() {
-  return R"HTML(
+const char INDEX_HTML[] PROGMEM = R"HTML(
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -629,12 +628,10 @@ startPoll();
 </body>
 </html>
 )HTML";
-}
 
 void handleRoot() {
   Serial.println("收到網頁請求");
-  String html = buildHtml();
-  server.send(200, "text/html; charset=utf-8", html);
+  server.send_P(200, "text/html; charset=utf-8", INDEX_HTML);
   Serial.println("網頁發送完成");
 }
 
