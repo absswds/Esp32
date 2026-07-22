@@ -3,6 +3,7 @@
 #include <WebServer.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <U8g2lib.h>
 
 #define FAN_PIN 18
 #define TEC_EN 19
@@ -18,6 +19,7 @@
 OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
 WebServer server(80);
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset= */ U8X8_PIN_NONE);
 
 // 三顆 DS18B20 — ROM 位址認人，不靠匯流排順序
 DeviceAddress nestAddr = {0x28, 0xAE, 0xB0, 0xC9, 0x00, 0x00, 0x00, 0xB4};
@@ -524,6 +526,52 @@ poll();
 </body>
 </html>)HTML";
 
+unsigned long lastOled = 0;
+
+void updateOLED() {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    // 溫度
+    u8g2.setCursor(0, 10);
+    u8g2.print("Nest:");
+    u8g2.setCursor(50, 10);
+    if (isnan(nestT)) u8g2.print("---"); else u8g2.print(nestT, 1);
+    u8g2.print("C");
+
+    u8g2.setCursor(0, 22);
+    u8g2.print("Room:");
+    u8g2.setCursor(50, 22);
+    if (isnan(roomT)) u8g2.print("---"); else u8g2.print(roomT, 1);
+    u8g2.print("C");
+
+    u8g2.setCursor(0, 34);
+    u8g2.print("Vent:");
+    u8g2.setCursor(50, 34);
+    if (isnan(ventT)) u8g2.print("---"); else u8g2.print(ventT, 1);
+    u8g2.print("C");
+
+    // 分隔線
+    u8g2.drawHLine(0, 38, 128);
+
+    // 狀態行
+    u8g2.setCursor(0, 50);
+    u8g2.print(systemOn ? (cooling ? "Cooling" : heating ? "Heating" : "Idle") : "OFF");
+    u8g2.setCursor(64, 50);
+    u8g2.print("Fan:");
+    u8g2.print((int)(fanSpeed * 100.0 / 255));
+    u8g2.print("%");
+
+    // 目標溫度
+    u8g2.setCursor(0, 62);
+    u8g2.print("Tgt:");
+    u8g2.print(cooling ? coolTarget : heatTarget, 1);
+    u8g2.print("C");
+    u8g2.setCursor(64, 62);
+    u8g2.print(manualMode ? "Manual" : "Auto");
+  } while (u8g2.nextPage());
+}
+
 void handleRoot() { server.send_P(200, "text/html; charset=utf-8", INDEX); }
 
 bool sameAddr(DeviceAddress a, DeviceAddress b) {
@@ -591,6 +639,10 @@ void setup() {
 
   doScan();
 
+  u8g2.begin();
+  u8g2.setContrast(128);
+  Serial.println("[OLED] 就緒");
+
   WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.printf("[WiFi] %s\n", WiFi.softAPIP().toString().c_str());
 
@@ -608,4 +660,5 @@ void loop() {
   server.handleClient();
   if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
+  if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 }
