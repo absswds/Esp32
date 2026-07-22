@@ -521,6 +521,18 @@ function setChart(v){
   document.querySelectorAll('.ch-pill').forEach(function(e,i){e.className='pill ch-pill'+(i===v?' act':'');});
   rs();
 }
+document.querySelectorAll('input[type=range]').forEach(function(s){
+  s.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var step=parseFloat(s.step)||1;
+    var v=parseFloat(s.value);
+    if(e.deltaY<0)v+=step;else v-=step;
+    v=Math.round(v/step)*step;
+    v=Math.max(parseFloat(s.min),Math.min(parseFloat(s.max),v));
+    s.value=v;
+    s.dispatchEvent(new Event('input'));
+  },{passive:false});
+});
 poll();
 </script>
 </body>
