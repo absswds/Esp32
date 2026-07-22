@@ -528,11 +528,12 @@ void setup() {
   setFan(0);
   setTec(0, 0);
 
+  // DS18B20 必須在 WiFi 之前初始化，否則 WiFi 中斷會打亂 OneWire 時序
+  doScan();
+
   WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.print("[WiFi] AP IP: ");
   Serial.println(WiFi.softAPIP());
-
-  doScan();
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
