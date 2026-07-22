@@ -19,10 +19,16 @@ OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
 WebServer server(80);
 
-float t = NAN;
+// 三顆 DS18B20 角色
+//  [0] = 巢穴內部 (控制主感測)
+//  [1] = 活動區   (環境監測，不參與控制)
+//  [2] = 出風口   (硬體保護，緊急斷電)
+float nestT = NAN, roomT = NAN, ventT = NAN;
+float readTemps[3] = {NAN, NAN, NAN};
+
 int fanSpeed = 0;
-float coolStop = 26.0;
-float heatStop = 28.0;
+float coolTarget = 15.0;
+float heatTarget = 24.0;
 unsigned long lastRead = 0;
 unsigned long lastScan = 0;
 
@@ -36,8 +42,10 @@ bool manualMode = false;
 bool convPending = false;
 unsigned long convStart = 0;
 
-float safeMin = 10.0;
-float safeMax = 40.0;
+// 安全保護閾值
+float safeMin = 5.0;      // 巢穴最低溫（動物安全）
+float safeMax = 35.0;     // 巢穴最高溫（動物安全）
+float ventMax = 50.0;     // 出風口最高溫（硬體保護）
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
@@ -63,89 +71,46 @@ void stopAll() {
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
-  setFan(100);
+  setFan(180);
   fanManual = false;
   tecManual = false;
   Serial.println("[SYS] 啟動");
 }
 
-void controlTemp() {
-  if (!systemOn || isnan(t) || tecManual || manualMode) return;
-  if (t < safeMin || t > safeMax) {
-    setTec(0, 0);
-    if (!fanManual) setFan(t > safeMax ? 255 : 60);
-    Serial.println("[SAFE] 極端溫度");
-    return;
-  }
-  if (t >= heatStop) {
-    setTec(220, 0);
-    if (!fanManual) setFan(255);
-  } else if (t <= coolStop) {
-    setTec(0, 200);
-    if (!fanManual) setFan(200);
-  } else {
-    setTec(0, 0);
-    if (!fanManual) setFan(100);
-  }
+void emergencyStop() {
+  systemOn = false;
+  stopAll();
+  Serial.println("!!! [緊急] 出風口溫度過高，系統關閉 !!!");
 }
 
-float readTemps[3] = {NAN, NAN, NAN};
+void controlTemp() {
+  if (!systemOn || tecManual || manualMode) return;
+  if (isnan(nestT)) return;
 
-void doScan() {
-  Serial.println("[DS18B20] 開始掃描匯流排...");
-  pinMode(DS18B20_PIN, INPUT_PULLUP);
-  delay(10);
-  int val = digitalRead(DS18B20_PIN);
-  Serial.printf("[DS18B20] GPIO%d 電位: %d (1=HIGH=上拉OK, 0=LOW=可能短路)\n", DS18B20_PIN, val);
-  dt.begin();
-  int cnt = dt.getDeviceCount();
-  Serial.printf("[DS18B20] getDeviceCount=%d\n", cnt);
-  if (cnt > 0) {
-    dsOk = true;
-    dt.setWaitForConversion(false);
-    dt.setResolution(11);
-    DeviceAddress addr;
-    for (int i = 0; i < cnt && i < 3; i++) {
-      if (dt.getAddress(addr, i)) {
-        char buf[24];
-        sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
-          addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
-        Serial.printf("[DS18B20]   [%d] %s\n", i, buf);
-      }
-    }
-    Serial.printf("[DS18B20] 成功, count=%d\n", cnt);
-  } else {
-    dsOk = false;
-    t = NAN;
+  // === 保護 1：出風口過熱（硬體安全，最高優先級）===
+  if (!isnan(ventT) && ventT >= ventMax) {
+    emergencyStop();
+    return;
+  }
 
-    // Raw OneWire 重置脈衝檢測
-    ds.reset_search();
-    delay(10);
-    bool present = !ds.reset();   // reset() returns 1 if no device (pulled low fails)
-    Serial.printf("[DS18B20] raw reset pulse -> present=%d (1=有裝置應答, 0=無裝置)\n", present);
+  // === 保護 2：巢穴極端溫度（動物安全）===
+  if (nestT < safeMin || nestT > safeMax) {
+    setTec(0, 0);
+    if (!fanManual) setFan(nestT > safeMax ? 255 : 60);
+    Serial.printf("[SAFE] 巢穴極端溫度 %.1f°C\n", nestT);
+    return;
+  }
 
-    // 嘗試 raw search
-    uint8_t rawAddr[8];
-    bool foundOne = ds.search(rawAddr);
-    if (foundOne) {
-      char buf[24];
-      sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
-        rawAddr[0], rawAddr[1], rawAddr[2], rawAddr[3],
-        rawAddr[4], rawAddr[5], rawAddr[6], rawAddr[7]);
-      Serial.printf("[DS18B20] raw search 找到: %s （DallasTemperature 卻回報0，可能是庫相容問題）\n", buf);
-    } else {
-      Serial.println("[DS18B20] raw search 也沒找到裝置（純硬體問題）");
-    }
-
-    Serial.println("[DS18B20] 可能原因:");
-    if (!present) {
-      Serial.println("[DS18B20]   *** 首要懷疑: DATA腳和VCC間缺少4.7kΩ上拉電阻 ***");
-    }
-    Serial.println("[DS18B20]   1. 缺少4.7kΩ上拉電阻(gpio到3.3V)");
-    Serial.println("[DS18B20]   2. DS18B20的VCC/GND沒接");
-    Serial.println("[DS18B20]   3. GPIO腳選錯(板子印字 vs GPIO編號)");
-    Serial.println("[DS18B20]   4. DS18B20本身故障");
-    Serial.println("[DS18B20] 每10秒將重試...");
+  // === 溫控：用巢穴溫度決定製冷/加熱 ===
+  if (nestT > coolTarget + 0.3) {       // 巢穴太熱 → 製冷
+    setTec(200, 0);
+    if (!fanManual) setFan(255);
+  } else if (nestT < heatTarget - 0.3) { // 巢穴太冷 → 加熱
+    setTec(0, 200);
+    if (!fanManual) setFan(200);
+  } else {                               // 在目標範圍內 → 維持
+    setTec(100, 100);
+    if (!fanManual) setFan(120);
   }
 }
 
@@ -161,29 +126,27 @@ void readSensor() {
   convPending = false;
 
   int n = dt.getDeviceCount();
-  float sum = 0;
-  int valid = 0;
   for (int i = 0; i < n && i < 3; i++) {
     float v = dt.getTempCByIndex(i);
     if (v == DEVICE_DISCONNECTED_F || isnan(v)) {
-      Serial.printf("[DS18BOT%d] 斷線\n", i);
+      Serial.printf("[DS18B20][%d] 斷線\n", i);
       readTemps[i] = NAN;
       continue;
     }
     readTemps[i] = v;
-    sum += v;
-    valid++;
   }
-  if (valid == 0) {
-    Serial.println("[DS18B20] 全數斷線");
-    t = NAN;
+  nestT = readTemps[0];
+  roomT = readTemps[1];
+  ventT = readTemps[2];
+
+  if (isnan(nestT)) {
+    Serial.println("[DS18B20] 巢穴感測器斷線");
     return;
   }
-  t = sum / valid;
   controlTemp();
-  Serial.printf("[T:%.1f (avg %d/%d)] %s %s Fan:%d\n",
-                t, valid, n,
-                cooling ? "COOL" : heating ? "HEAT" : "IDLE",
+  Serial.printf("[巢穴:%.1f 活動:%.1f 出風:%.1f] %s %s Fan:%d\n",
+                nestT, roomT, ventT,
+                cooling ? "製冷" : heating ? "加熱" : "維持",
                 systemOn ? "ON" : "OFF", fanSpeed);
 }
 
@@ -196,13 +159,13 @@ void sendJson(const char* msg) {
 
 void handleData() {
   if (!dsOk) { sendJson("DS18B20 未連線"); return; }
-  if (isnan(t)) { sendJson("等待感測資料..."); return; }
+  if (isnan(nestT)) { sendJson("等待感測資料..."); return; }
   int n = dt.getDeviceCount();
-  char buf[640];
+  char buf[700];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
-    t, readTemps[0], readTemps[1], readTemps[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
+    "{\"ok\":true,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolTarget\":%.1f,\"heatTarget\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    nestT, roomT, ventT, readTemps[0], readTemps[1], readTemps[2], n,
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolTarget, heatTarget, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
 
@@ -217,21 +180,20 @@ void handleControl() {
     fanManual = manualMode;
     Serial.printf("[SYS] %s 模式\n", manualMode ? "手動" : "自動");
   }
-  if (server.hasArg("coolStop")) {
-    float v = server.arg("coolStop").toFloat();
-    coolStop = constrain(v, 0, 50);
+  if (server.hasArg("coolTarget")) {
+    coolTarget = constrain(server.arg("coolTarget").toFloat(), 0, 30);
   }
-  if (server.hasArg("heatStop")) {
-    float v = server.arg("heatStop").toFloat();
-    heatStop = constrain(v, 0, 50);
+  if (server.hasArg("heatTarget")) {
+    heatTarget = constrain(server.arg("heatTarget").toFloat(), 0, 35);
   }
   if (server.hasArg("safeMin")) {
-    float v = server.arg("safeMin").toFloat();
-    safeMin = constrain(v, 0, 50);
+    safeMin = constrain(server.arg("safeMin").toFloat(), 0, 20);
   }
   if (server.hasArg("safeMax")) {
-    float v = server.arg("safeMax").toFloat();
-    safeMax = constrain(v, 0, 50);
+    safeMax = constrain(server.arg("safeMax").toFloat(), 20, 50);
+  }
+  if (server.hasArg("ventMax")) {
+    ventMax = constrain(server.arg("ventMax").toFloat(), 30, 80);
   }
   controlTemp();
   server.send(200, "text/plain", "OK");
@@ -242,8 +204,8 @@ void handleDiag() {
   int pinVal = digitalRead(DS18B20_PIN);
   int cnt = dt.getDeviceCount();
   snprintf(buf, sizeof(buf),
-    "{\"pin\":%d,\"pinState\":%d,\"dsOk\":%s,\"deviceCount\":%d,\"temp\":%.2f,\"conversionPending\":%s}",
-    DS18B20_PIN, pinVal, dsOk ? "true" : "false", cnt, t, convPending ? "true" : "false");
+    "{\"pin\":%d,\"pinState\":%d,\"dsOk\":%s,\"deviceCount\":%d,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"conversionPending\":%s}",
+    DS18B20_PIN, pinVal, dsOk ? "true" : "false", cnt, nestT, roomT, ventT, convPending ? "true" : "false");
   server.send(200, "application/json", buf);
 }
 
@@ -254,14 +216,8 @@ void handleTest() {
   int enVal = server.hasArg("en") ? server.arg("en").toInt() : -1;
 
   if (enVal >= 0) digitalWrite(TEC_EN, enVal ? HIGH : LOW);
-  if (fanVal >= 0) {
-    setFan(fanVal);
-    fanManual = true;
-  }
-  if (coolVal >= 0 || heatVal >= 0) {
-    setTec(max(0, coolVal), max(0, heatVal));
-    tecManual = true;
-  }
+  if (fanVal >= 0) { setFan(fanVal); fanManual = true; }
+  if (coolVal >= 0 || heatVal >= 0) { setTec(max(0, coolVal), max(0, heatVal)); tecManual = true; }
 
   char buf[128];
   snprintf(buf, sizeof(buf), "{\"ok\":true,\"en\":%d,\"fan\":%d,\"cool\":%s,\"heat\":%s}",
@@ -276,10 +232,10 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TEC</title>
+<title>TEC 實驗溫控</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0e14;--sf:#111820;--bd:#1e2a36;--tx:#e0e6ed;--t2:#7a8a9a;--t3:#4a5568;--r:#ef4444;--b:#3b82f6;--g:#22c55e;--a:#eab308;--c:#14b8a6}
+:root{--bg:#0a0e14;--sf:#111820;--bd:#1e2a36;--tx:#e0e6ed;--t2:#7a8a9a;--t3:#4a5568;--r:#ef4444;--b:#3b82f6;--g:#22c55e;--a:#eab308;--c:#14b8a6;--o:#f97316}
 body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:12px 16px;max-width:600px;margin:0 auto}
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 0 10px;border-bottom:1px solid var(--bd);margin-bottom:10px}
 .hdr h1{font-size:1.05rem;font-weight:700}
@@ -287,12 +243,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .conn{display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--t2)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--g);flex-shrink:0}
 .dot.err{background:var(--r)}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
 .card{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:10px 4px;text-align:center;position:relative;overflow:hidden}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
-.card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--g)}.card.ca::before{background:var(--a)}
-.card .val{font-size:1.4rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.card .lbl{font-size:.55rem;color:var(--t3);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+.card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--o)}
+.card .val{font-size:1.15rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.card .lbl{font-size:.5rem;color:var(--t3);margin-top:3px;letter-spacing:.3px}
 .sec{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px}
 .sec h2{font-size:.62rem;color:var(--t3);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
 .btn{width:100%;padding:11px;border-radius:6px;border:none;font-size:.85rem;font-weight:700;cursor:pointer;transition:all .15s}
@@ -306,7 +262,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .pill.cold{color:var(--t2)}.pill.cold.act{border-color:var(--b);color:var(--b)}
 .pill.hot{color:var(--t2)}.pill.hot.act{border-color:var(--r);color:var(--r)}
 .fld{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.fld label{font-size:.7rem;color:var(--t2);min-width:60px}
+.fld label{font-size:.7rem;color:var(--t2);min-width:64px}
 .fld input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
 .fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--c);cursor:pointer}
 .fld .rv{font-size:.85rem;font-weight:800;color:var(--c);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
@@ -318,16 +274,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 #chart{width:100%;height:130px;display:block}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-@media(max-width:400px){.grid{grid-template-columns:repeat(2,1fr)}.card .val{font-size:1.1rem}}
+@media(max-width:400px){.grid{grid-template-columns:repeat(3,1fr)}.card .val{font-size:1rem}}
 </style>
 </head>
 <body>
 <div class="hdr">
-  <h1><b>TEC</b> 溫控系統</h1>
+  <h1><b>TEC</b> 蟄眠實驗</h1>
   <div class="conn"><span class="dot" id="dot"></span><span id="st">...</span></div>
 </div>
 <div class="grid">
-  <div class="card cr"><div class="val" id="mT">--</div><div class="lbl">溫度 °C</div></div>
+  <div class="card cr"><div class="val" id="mNest">--</div><div class="lbl">巢穴</div></div>
+  <div class="card cb"><div class="val" id="mRoom">--</div><div class="lbl">活動區</div></div>
+  <div class="card cg"><div class="val" id="mVent">--</div><div class="lbl">出風口</div></div>
 </div>
 <div class="sec">
   <h2>溫度趨勢</h2>
@@ -350,32 +308,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   </div>
 </div>
 <div class="sec">
-  <h2>溫度閾值</h2>
+  <h2>實驗目標溫度</h2>
   <div class="fld">
-    <label>高溫製冷</label>
-    <input type="range" min="15" max="35" step="0.1" value="28" id="hs" oninput="setHS(this.value)">
-    <span class="rv" id="hsv">28</span>
+    <label>製冷目標</label>
+    <input type="range" min="5" max="30" step="0.5" value="15" id="ct" oninput="setCT(this.value)">
+    <span class="rv" id="ctV">15</span>
   </div>
   <div class="fld">
-    <label>低溫加熱</label>
-    <input type="range" min="10" max="30" step="0.1" value="26" id="cs" oninput="setCS(this.value)">
-    <span class="rv" id="csvv">26</span>
+    <label>加熱目標</label>
+    <input type="range" min="10" max="35" step="0.5" value="24" id="ht" oninput="setHT(this.value)">
+    <span class="rv" id="htV">24</span>
   </div>
-  <div class="info"><b>製冷</b>: ＞<span id="nhs">28</span>°C | <b>加熱</b>: ＜<span id="ncs">26</span>°C | 安全: ＜<span id="nmin">10</span>°C / ＞<span id="nmax">40</span>°C</div>
+  <div class="info">巢穴 ＜<span id="nct">15</span>°C 需加熱 | 巢穴 ＞<span id="nht">24</span>°C 需製冷</div>
 </div>
 <div class="sec">
-  <h2>安全溫度</h2>
+  <h2>安全保護</h2>
   <div class="fld">
-    <label>最低溫</label>
-    <input type="range" min="0" max="30" step="0.5" value="10" id="smin" oninput="setSMin(this.value)">
-    <span class="rv" id="sminV">10</span>
+    <label>巢穴最低</label>
+    <input type="range" min="0" max="20" step="0.5" value="5" id="smin" oninput="setSMin(this.value)">
+    <span class="rv" id="sminV">5</span>
   </div>
   <div class="fld">
-    <label>最高溫</label>
-    <input type="range" min="20" max="50" step="0.5" value="40" id="smax" oninput="setSMax(this.value)">
-    <span class="rv" id="smaxV">40</span>
+    <label>巢穴最高</label>
+    <input type="range" min="20" max="50" step="0.5" value="35" id="smax" oninput="setSMax(this.value)">
+    <span class="rv" id="smaxV">35</span>
   </div>
-  <div class="info">低於最低或超過最高溫，TEC 自動關閉保護</div>
+  <div class="fld">
+    <label>出風口上限</label>
+    <input type="range" min="30" max="80" step="1" value="50" id="vmax" oninput="setVMax(this.value)">
+    <span class="rv" id="vmaxV">50</span>
+  </div>
+  <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
 </div>
 <div class="sec">
   <h2>風速控制</h2>
@@ -403,7 +366,7 @@ function dC(){
   var W=cv.getBoundingClientRect().width,HH=cv.getBoundingClientRect().height,pl=38,pr=8,pt=10,pb=18;
   cx.clearRect(0,0,W,HH);
   if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待資料...',W/2,HH/2);return;}
-  var mn=1e9,mx=-1e9;H.forEach(function(r){if(r.t<mn)mn=r.t;if(r.t>mx)mx=r.t;});
+  var mn=1e9,mx=-1e9;H.forEach(function(r){if(r.n<mn)mn=r.n;if(r.n>mx)mx=r.n;});
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
   var pw=W-pl-pr,ph=HH-pt-pb;
@@ -413,51 +376,53 @@ function dC(){
   var st=pw/Math.max(1,H.length-1),xt=Math.max(1,Math.ceil(H.length/5));
   H.forEach(function(r,i){if(i%xt===0||i===H.length-1)cx.fillText(r.ti,pl+st*i,HH-pb+12);});
   var gd=cx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,'rgba(239,68,68,.2)');gd.addColorStop(1,'rgba(239,68,68,0)');
-  cx.beginPath();H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.t-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
+  cx.beginPath();H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.n-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
   cx.lineTo(pl+st*(H.length-1),HH-pb);cx.lineTo(pl,HH-pb);cx.closePath();cx.fillStyle=gd;cx.fill();
   cx.beginPath();cx.strokeStyle='#ef4444';cx.lineWidth=2;cx.lineJoin='round';
-  H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.t-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();
-  var la=H[H.length-1],lx=pl+st*(H.length-1),ly=pt+(1-(la.t-mn)/sp)*ph;
+  H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.n-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();
+  var la=H[H.length-1],lx=pl+st*(H.length-1),ly=pt+(1-(la.n-mn)/sp)*ph;
   cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle='#ef4444';cx.fill();
   cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle='rgba(239,68,68,.3)';cx.lineWidth=2;cx.stroke();
-  cx.fillStyle='#ef4444';cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(la.t.toFixed(1)+'C',lx-10,ly-8);
+  cx.fillStyle='#ef4444';cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(la.n.toFixed(1)+'C',lx-10,ly-8);
 }
 rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!H.length){toast('無資料');return;}
-  var c='﻿時間,溫度(°C)\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2);}).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
-  toast('已導出 '+H.length+' 筆資料');
+  var c='﻿時間,巢穴(°C),活動區(°C),出風口(°C)\n'+H.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1);}).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(new Date().toISOString().slice(0,10))+'.csv';a.click();
+  toast('已導出 '+H.length+' 筆');
 }
-function clearHist(){H=[];rs();toast('記錄已清除');}
+function clearHist(){H=[];rs();toast('已清除');}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
-    document.getElementById('mT').textContent=d.temperature.toFixed(1);
+    document.getElementById('mNest').textContent=d.nest.toFixed(1);
+    document.getElementById('mRoom').textContent=d.room.toFixed(1);
+    document.getElementById('mVent').textContent=d.vent.toFixed(1);
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
     document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
-    var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'運轉中'):'待機';
+    var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'維持中'):'待機';
     document.getElementById('pSys').textContent=ps;
     document.getElementById('pSys').className='pill sys'+(d.systemOn?' act':'');
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
     _cooling=d.cooling;_heating=d.heating;
-    document.getElementById('hs').value=d.heatStop;
-    document.getElementById('hsv').textContent=d.heatStop.toFixed(1);
-    document.getElementById('cs').value=d.coolStop;
-    document.getElementById('csvv').textContent=d.coolStop.toFixed(1);
-    document.getElementById('nhs').textContent=d.heatStop.toFixed(1);
-    document.getElementById('ncs').textContent=d.coolStop.toFixed(1);
+    document.getElementById('ct').value=d.coolTarget;
+    document.getElementById('ctV').textContent=d.coolTarget.toFixed(1);
+    document.getElementById('ht').value=d.heatTarget;
+    document.getElementById('htV').textContent=d.heatTarget.toFixed(1);
+    document.getElementById('nct').textContent=d.coolTarget.toFixed(1);
+    document.getElementById('nht').textContent=d.heatTarget.toFixed(1);
     document.getElementById('smin').value=d.safeMin;
     document.getElementById('sminV').textContent=d.safeMin.toFixed(1);
     document.getElementById('smax').value=d.safeMax;
     document.getElementById('smaxV').textContent=d.safeMax.toFixed(1);
-    document.getElementById('nmin').textContent=d.safeMin.toFixed(1);
-    document.getElementById('nmax').textContent=d.safeMax.toFixed(1);
+    document.getElementById('vmax').value=d.ventMax;
+    document.getElementById('vmaxV').textContent=d.ventMax.toFixed(0);
     document.getElementById('modeBtn').textContent=d.manualMode?'切換自動模式':'切換手動模式';
     document.getElementById('modeBtn').style.background=d.manualMode?'rgba(239,68,68,.15)':'rgba(20,184,166,.15)';
     document.getElementById('modeBtn').style.color=d.manualMode?'var(--r)':'var(--c)';
@@ -465,7 +430,7 @@ async function doPoll(){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
-    H.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
+    H.push({n:d.nest,r:d.room,v:d.vent,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     dC();
   }catch(e){
@@ -475,28 +440,18 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
-function setHS(v){document.getElementById('hsv').textContent=parseFloat(v).toFixed(1);fetch('/control?heatStop='+v);}
-function setCS(v){document.getElementById('csvv').textContent=parseFloat(v).toFixed(1);fetch('/control?coolStop='+v);}
-function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmin').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
-function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);document.getElementById('nmax').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
+function setCT(v){document.getElementById('ctV').textContent=parseFloat(v).toFixed(1);document.getElementById('nct').textContent=parseFloat(v).toFixed(1);fetch('/control?coolTarget='+v);}
+function setHT(v){document.getElementById('htV').textContent=parseFloat(v).toFixed(1);document.getElementById('nht').textContent=parseFloat(v).toFixed(1);fetch('/control?heatTarget='+v);}
+function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
+function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
+function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);fetch('/control?ventMax='+v);}
 function setFanM(v){fm=true;document.getElementById('fanV').textContent=v+'%';fetch('/test?fan='+Math.round(v*255/100));setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
-  try{
-    var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';
-    await fetch(url);
-  }catch(e){}
+  try{var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';await fetch(url);}catch(e){}
 }
 var _cooling=false,_heating=false;
-function toggleCool(){
-  _cooling=!_cooling;
-  if(_cooling){_heating=false;tTest('cool',220);}
-  else{tTest('cool',0);}
-}
-function toggleHeat(){
-  _heating=!_heating;
-  if(_heating){_cooling=false;tTest('heat',220);}
-  else{tTest('heat',0);}
-}
+function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;tTest('cool',200);}else{tTest('cool',0);}}
+function toggleHeat(){_heating=!_heating;if(_heating){_cooling=false;tTest('heat',200);}else{tTest('heat',0);}}
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
 function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
 poll();
@@ -504,36 +459,65 @@ poll();
 </body>
 </html>)HTML";
 
-void handleRoot() {
-  server.send_P(200, "text/html; charset=utf-8", INDEX);
+void handleRoot() { server.send_P(200, "text/html; charset=utf-8", INDEX); }
+
+void doScan() {
+  Serial.println("[DS18B20] 掃描匯流排...");
+  pinMode(DS18B20_PIN, INPUT_PULLUP);
+  delay(10);
+  int val = digitalRead(DS18B20_PIN);
+  Serial.printf("[DS18B20] GPIO%d: %d\n", DS18B20_PIN, val);
+  dt.begin();
+  int cnt = dt.getDeviceCount();
+  Serial.printf("[DS18B20] count=%d\n", cnt);
+  if (cnt > 0) {
+    dsOk = true;
+    dt.setWaitForConversion(false);
+    dt.setResolution(11);
+    DeviceAddress addr;
+    for (int i = 0; i < cnt && i < 3; i++) {
+      if (dt.getAddress(addr, i)) {
+        char buf[24];
+        sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
+          addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
+        Serial.printf("[DS18B20] [%d] %s\n", i, buf);
+      }
+    }
+    Serial.printf("[DS18B20] 就緒 count=%d\n", cnt);
+  } else {
+    dsOk = false;
+    nestT = NAN; roomT = NAN; ventT = NAN;
+    ds.reset_search(); delay(10);
+    bool present = !ds.reset();
+    Serial.printf("[DS18B20] present=%d\n", present);
+    uint8_t rawAddr[8];
+    if (ds.search(rawAddr)) {
+      char buf[24];
+      sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
+        rawAddr[0], rawAddr[1], rawAddr[2], rawAddr[3],
+        rawAddr[4], rawAddr[5], rawAddr[6], rawAddr[7]);
+      Serial.printf("[DS18B20] raw=%s\n", buf);
+    } else {
+      Serial.println("[DS18B20] 無裝置");
+    }
+  }
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(500);
-  Serial.println("\n\n========== TEC 啟動 ==========");
-  Serial.printf("晶片: ESP32, 編譯: %s %s\n", __DATE__, __TIME__);
-  Serial.printf("DS18B20 接腳: GPIO%d\n", DS18B20_PIN);
+  Serial.begin(115200); delay(500);
+  Serial.printf("\n========== TEC 蟄眠溫控 ==========\n%s %s\n", __DATE__, __TIME__);
+  Serial.printf("GPIO%d, 3× DS18B20: 巢穴/活動/出風\n", DS18B20_PIN);
 
-  pinMode(TEC_EN, OUTPUT);
-  digitalWrite(TEC_EN, LOW);
+  pinMode(TEC_EN, OUTPUT); digitalWrite(TEC_EN, LOW);
+  ledcSetup(FAN_CH, PWM_FREQ, PWM_RES); ledcAttachPin(FAN_PIN, FAN_CH);
+  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES); ledcAttachPin(TEC_LPWM, TEC_L_CH);
+  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES); ledcAttachPin(TEC_RPWM, TEC_R_CH);
+  setFan(0); setTec(0, 0);
 
-  ledcSetup(FAN_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(FAN_PIN, FAN_CH);
-  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(TEC_LPWM, TEC_L_CH);
-  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES);
-  ledcAttachPin(TEC_RPWM, TEC_R_CH);
-
-  setFan(0);
-  setTec(0, 0);
-
-  // DS18B20 必須在 WiFi 之前初始化，否則 WiFi 中斷會打亂 OneWire 時序
   doScan();
 
   WiFi.softAP("ESP32-TEMP", "12345678");
-  Serial.print("[WiFi] AP IP: ");
-  Serial.println(WiFi.softAPIP());
+  Serial.printf("[WiFi] %s\n", WiFi.softAPIP().toString().c_str());
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
@@ -542,20 +526,11 @@ void setup() {
   server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
-  Serial.println("[Server] 啟動完成");
-  Serial.println("==============================\n");
+  Serial.println("[Server] OK\n");
 }
 
 void loop() {
   server.handleClient();
-
-  if (!dsOk && millis() - lastScan >= 10000) {
-    lastScan = millis();
-    doScan();
-  }
-
-  if (millis() - lastRead >= 2000) {
-    lastRead = millis();
-    readSensor();
-  }
+  if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
+  if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
 }
