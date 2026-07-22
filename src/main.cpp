@@ -20,15 +20,16 @@ DallasTemperature dt(&ds);
 WebServer server(80);
 
 // 三顆 DS18B20 角色
-//  [0] = 巢穴內部 (控制主感測)
+//  [0] = 巢穴內部 (溫控主感測)
 //  [1] = 活動區   (環境監測，不參與控制)
 //  [2] = 出風口   (硬體保護，緊急斷電)
 float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
 
 int fanSpeed = 0;
-float coolTarget = 15.0;
-float heatTarget = 24.0;
+float coolTarget = 20.0;  // 你可從網頁調（實際最低約26°C）
+float heatTarget = 28.0;  // 你可從網頁調
+float hysteresis = 0.3;   // 窄滯回，配合實際窄工作區間
 unsigned long lastRead = 0;
 unsigned long lastScan = 0;
 
@@ -71,7 +72,7 @@ void stopAll() {
 
 void startAll() {
   digitalWrite(TEC_EN, HIGH);
-  setFan(180);
+  setFan(100);
   fanManual = false;
   tecManual = false;
   Serial.println("[SYS] 啟動");
@@ -81,6 +82,22 @@ void emergencyStop() {
   systemOn = false;
   stopAll();
   Serial.println("!!! [緊急] 出風口溫度過高，系統關閉 !!!");
+}
+
+void setTecPwm(float power, bool isCool) {
+  // power: 0-1.0  (0=off, 1.0=full)
+  int pwmVal = constrain((int)(power * 255), 0, 255);
+  if (isCool) {
+    cooling = power > 0.05;
+    heating = false;
+    ledcWrite(TEC_L_CH, pwmVal);
+    ledcWrite(TEC_R_CH, 0);
+  } else {
+    heating = power > 0.05;
+    cooling = false;
+    ledcWrite(TEC_L_CH, 0);
+    ledcWrite(TEC_R_CH, pwmVal);
+  }
 }
 
 void controlTemp() {
@@ -95,22 +112,34 @@ void controlTemp() {
 
   // === 保護 2：巢穴極端溫度（動物安全）===
   if (nestT < safeMin || nestT > safeMax) {
-    setTec(0, 0);
+    setTecPwm(0, true);
     if (!fanManual) setFan(nestT > safeMax ? 255 : 60);
     Serial.printf("[SAFE] 巢穴極端溫度 %.1f°C\n", nestT);
     return;
   }
 
-  // === 溫控：用巢穴溫度決定製冷/加熱 ===
-  if (nestT > coolTarget + 0.3) {       // 巢穴太熱 → 製冷
-    setTec(200, 0);
-    if (!fanManual) setFan(255);
-  } else if (nestT < heatTarget - 0.3) { // 巢穴太冷 → 加熱
-    setTec(0, 200);
-    if (!fanManual) setFan(200);
-  } else {                               // 在目標範圍內 → 維持
-    setTec(100, 100);
-    if (!fanManual) setFan(120);
+  // === 比例溫控 ===
+  // 巢穴 > coolTarget+hysteresis → 製冷，PWM 隨偏差增大
+  // 巢穴 < heatTarget-hysteresis → 加熱，PWM 隨偏差增大
+  // 兩者之間 → 關 TEC，低風扇
+
+  float coolDiff = nestT - coolTarget;  // +=太熱需製冷
+  float heatDiff = heatTarget - nestT;  // +=太冷需加熱
+
+  if (coolDiff > hysteresis) {
+    // 需製冷 — 偏差每多1°C 增加~12% PWM
+    float power = constrain(coolDiff / 5.0, 0.15, 1.0);
+    setTecPwm(power, true);
+    if (!fanManual) setFan(100 + (int)(155 * power));
+  } else if (heatDiff > hysteresis) {
+    // 需加熱 — 偏差每多1°C 增加~12% PWM
+    float power = constrain(heatDiff / 5.0, 0.15, 1.0);
+    setTecPwm(power, false);
+    if (!fanManual) setFan(80 + (int)(175 * power));
+  } else {
+    // 在目標範圍內 → 關 TEC，低風扇循環
+    setTecPwm(0, true);
+    if (!fanManual) setFan(40);
   }
 }
 
@@ -311,15 +340,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>實驗目標溫度</h2>
   <div class="fld">
     <label>製冷目標</label>
-    <input type="range" min="5" max="30" step="0.5" value="15" id="ct" oninput="setCT(this.value)">
-    <span class="rv" id="ctV">15</span>
+    <input type="range" min="10" max="35" step="0.5" value="20" id="ct" oninput="setCT(this.value)">
+    <span class="rv" id="ctV">20</span>
   </div>
   <div class="fld">
     <label>加熱目標</label>
-    <input type="range" min="10" max="35" step="0.5" value="24" id="ht" oninput="setHT(this.value)">
-    <span class="rv" id="htV">24</span>
+    <input type="range" min="15" max="40" step="0.5" value="28" id="ht" oninput="setHT(this.value)">
+    <span class="rv" id="htV">28</span>
   </div>
-  <div class="info">巢穴 ＜<span id="nct">15</span>°C 需加熱 | 巢穴 ＞<span id="nht">24</span>°C 需製冷</div>
+  <div class="info">巢穴 ＞<span id="nct">20</span>°C 需製冷 | 巢穴 ＜<span id="nht">28</span>°C 需加熱</div>
 </div>
 <div class="sec">
   <h2>安全保護</h2>
