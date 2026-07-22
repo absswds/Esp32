@@ -13,7 +13,7 @@
 #define FAN_CH 0
 #define TEC_L_CH 1
 #define TEC_R_CH 2
-#define DS18B20_PIN 12
+#define DS18B20_PIN 13
 
 OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
@@ -492,8 +492,7 @@ void handleRoot() { server.send_P(200, "text/html; charset=utf-8", INDEX); }
 
 void doScan() {
   Serial.println("[DS18B20] 掃描匯流排...");
-  dt.begin();                           // 初始化 DallasTemperature（內部 pinMode(INPUT) 會關上拉）
-  pinMode(DS18B20_PIN, INPUT_PULLUP);   // 補回內部上拉 — GPIO12 無法用外部 4.7kΩ
+  dt.begin();
   delay(10);
   int val = digitalRead(DS18B20_PIN);
   Serial.printf("[DS18B20] GPIO%d: %d\n", DS18B20_PIN, val);
