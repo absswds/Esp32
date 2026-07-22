@@ -1,9 +1,8 @@
-﻿#include <Arduino.h>
+#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME680.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 #define FAN_PIN 18
 #define TEC_EN 19
@@ -14,12 +13,13 @@
 #define FAN_CH 0
 #define TEC_L_CH 1
 #define TEC_R_CH 2
+#define DS18B20_PIN 4
 
-Adafruit_BME680 bme;
+OneWire ds(DS18B20_PIN);
+DallasTemperature dt(&ds);
 WebServer server(80);
 
-float t = NAN, h = NAN, p = NAN, g = NAN;
-int aqi = 0;
+float t = NAN;
 int fanSpeed = 0;
 float coolStop = 26.0;
 float heatStop = 28.0;
@@ -28,7 +28,7 @@ unsigned long lastRead = 0;
 bool systemOn = false;
 bool cooling = false;
 bool heating = false;
-bool bmeOk = false;
+bool dsOk = false;
 bool fanManual = false;
 bool tecManual = false;
 bool manualMode = false;
@@ -86,30 +86,19 @@ void controlTemp() {
   }
 }
 
-int calcAqi(float gas) {
-  if (gas >= 1000) return 0;
-  if (gas >= 800)  return map((int)gas, 800, 1000, 50, 0);
-  if (gas >= 600)  return map((int)gas, 600, 800, 100, 51);
-  if (gas >= 400)  return map((int)gas, 400, 600, 200, 101);
-  if (gas >= 200)  return map((int)gas, 200, 400, 300, 201);
-  return map((int)max(0.0f, gas), 0, 200, 500, 301);
-}
-
 void readSensor() {
-  if (!bmeOk) return;
-  if (!bme.performReading()) {
-    Serial.println("[BME688] 讀取失敗");
-    bmeOk = false;
+  if (!dsOk) return;
+  dt.requestTemperatures();
+  t = dt.getTempCByIndex(0);
+  if (t == DEVICE_DISCONNECTED_RAW || isnan(t)) {
+    Serial.println("[DS18B20] 讀取失敗");
+    dsOk = false;
+    t = NAN;
     return;
   }
-  t = bme.temperature;
-  h = bme.humidity;
-  p = bme.pressure / 100.0;
-  g = bme.gas_resistance / 1000.0;
-  aqi = calcAqi(g);
   controlTemp();
-  Serial.printf("[T:%.1f H:%.1f AQI:%d] %s %s Fan:%d\n",
-                t, h, aqi,
+  Serial.printf("[T:%.1f] %s %s Fan:%d\n",
+                t,
                 cooling ? "COOL" : heating ? "HEAT" : "IDLE",
                 systemOn ? "ON" : "OFF", fanSpeed);
 }
@@ -122,12 +111,12 @@ void sendJson(const char* msg) {
 }
 
 void handleData() {
-  if (!bmeOk) { sendJson("BME688 未連線"); return; }
+  if (!dsOk) { sendJson("DS18B20 未連線"); return; }
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
-  char buf[420];
+  char buf[340];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"humidity\":%.2f,\"pressure\":%.2f,\"gas\":%.2f,\"aqi\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
-    t, h, p, g, aqi, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
+    "{\"ok\":true,\"temperature\":%.2f,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
+    t, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
   server.send(200, "application/json", buf);
 }
 
@@ -202,7 +191,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .conn{display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--t2)}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--g);flex-shrink:0}
 .dot.err{background:var(--r)}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:10px}
 .card{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:10px 4px;text-align:center;position:relative;overflow:hidden}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
 .card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--g)}.card.ca::before{background:var(--a)}
@@ -243,9 +232,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="grid">
   <div class="card cr"><div class="val" id="mT">--</div><div class="lbl">溫度 °C</div></div>
-  <div class="card cb"><div class="val" id="mH">--</div><div class="lbl">濕度 %</div></div>
-  <div class="card cg"><div class="val" id="mP">--</div><div class="lbl">氣壓 hPa</div></div>
-  <div class="card ca"><div class="val" id="mA">--</div><div class="lbl">空氣 AQI</div></div>
 </div>
 <div class="sec">
   <h2>溫度趨勢</h2>
@@ -344,7 +330,7 @@ rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!H.length){toast('無資料');return;}
-  var c='\uFEFF時間,溫度(°C),濕度(%),氣壓(hPa),AQI\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2)+','+r.h.toFixed(1)+','+r.p.toFixed(1)+','+r.a;}).join('\n');
+  var c='﻿時間,溫度(°C)\n'+H.map(function(r){return r.ti+','+r.t.toFixed(2);}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
   toast('已導出 '+H.length+' 筆資料');
 }
@@ -356,9 +342,6 @@ async function doPoll(){
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
     document.getElementById('mT').textContent=d.temperature.toFixed(1);
-    document.getElementById('mH').textContent=d.humidity.toFixed(1);
-    document.getElementById('mP').textContent=d.pressure.toFixed(1);
-    document.getElementById('mA').textContent=d.aqi;
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
     document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
     var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'運轉中'):'待機';
@@ -386,7 +369,7 @@ async function doPoll(){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
-    H.push({t:d.temperature,h:d.humidity,p:d.pressure,a:d.aqi,ti:new Date().toLocaleTimeString()});
+    H.push({t:d.temperature,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     dC();
   }catch(e){
@@ -446,27 +429,17 @@ void setup() {
   setFan(0);
   setTec(0, 0);
 
-  Wire.begin();
-  Wire.setClock(100000);
-
   WiFi.softAP("ESP32-TEMP", "12345678");
   Serial.print("[WiFi] ");
   Serial.println(WiFi.softAPIP());
 
-  uint8_t bmeAddr = 0;
-  if (bme.begin(0x77)) { bmeAddr = 0x77; }
-  else if (bme.begin(0x76)) { bmeAddr = 0x76; }
-
-  if (bmeAddr) {
-    bme.setTemperatureOversampling(BME680_OS_2X);
-    bme.setHumidityOversampling(BME680_OS_1X);
-    bme.setPressureOversampling(BME680_OS_4X);
-    bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-    bme.setGasHeater(320, 150);
-    bmeOk = true;
-    Serial.printf("[BME688] OK @ 0x%02X\n", bmeAddr);
+  dt.begin();
+  dsOk = dt.getDeviceCount() > 0;
+  if (dsOk) {
+    dt.setResolution(11);
+    Serial.printf("[DS18B20] OK, count=%d\n", dt.getDeviceCount());
   } else {
-    Serial.println("[BME688] 未找到");
+    Serial.println("[DS18B20] 未找到");
   }
 
   server.on("/", handleRoot);
