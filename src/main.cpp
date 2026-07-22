@@ -290,6 +290,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .pill.sys.act{border-color:var(--c);color:var(--c)}
 .pill.cold{color:var(--t2)}.pill.cold.act{border-color:var(--b);color:var(--b)}
 .pill.hot{color:var(--t2)}.pill.hot.act{border-color:var(--r);color:var(--r)}
+.pill.ch-pill{color:var(--t3);font-size:.58rem}.pill.ch-pill.act{color:var(--tx);border-color:var(--c)}
 .fld{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .fld label{font-size:.7rem;color:var(--t2);min-width:64px}
 .fld input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
@@ -319,6 +320,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 <div class="sec">
   <h2>溫度趨勢</h2>
   <canvas id="chart"></canvas>
+  <div class="pills" style="margin-top:2px;margin-bottom:4px">
+    <div class="pill ch-pill act" onclick="setChart(0)">巢穴</div>
+    <div class="pill ch-pill" onclick="setChart(1)">活動區</div>
+    <div class="pill ch-pill" onclick="setChart(2)">出風口</div>
+  </div>
   <div class="act-row">
     <button class="act-btn" onclick="exportCSV()">導出 CSV</button>
     <button class="act-btn" onclick="clearHist()">清除記錄</button>
@@ -387,15 +393,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=120,ms=2000,pi=null,fm=false;
+var H=[],M=120,allData=[],ms=2000,pi=null,fm=false,chartMode=0;
+var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
+var chartLabels=['巢穴','活動區','出風口'];
+var chartFields=['n','r','v'];
 var cv=document.getElementById('chart'),cx=cv.getContext('2d');
 function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dC();}
 window.addEventListener('resize',rs);
 function dC(){
   var W=cv.getBoundingClientRect().width,HH=cv.getBoundingClientRect().height,pl=38,pr=8,pt=10,pb=18;
+  var f=chartFields[chartMode],cl=chartColors[chartMode],lb=chartLabels[chartMode];
   cx.clearRect(0,0,W,HH);
-  if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待資料...',W/2,HH/2);return;}
-  var mn=1e9,mx=-1e9;H.forEach(function(r){if(r.n<mn)mn=r.n;if(r.n>mx)mx=r.n;});
+  if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待 '+lb+' 資料...',W/2,HH/2);return;}
+  var mn=1e9,mx=-1e9;H.forEach(function(r){var v=r[f];if(v<mn)mn=v;if(v>mx)mx=v;});
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
   var pw=W-pl-pr,ph=HH-pt-pb;
@@ -404,25 +414,25 @@ function dC(){
   cx.textAlign='center';cx.font='8px system-ui';
   var st=pw/Math.max(1,H.length-1),xt=Math.max(1,Math.ceil(H.length/5));
   H.forEach(function(r,i){if(i%xt===0||i===H.length-1)cx.fillText(r.ti,pl+st*i,HH-pb+12);});
-  var gd=cx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,'rgba(239,68,68,.2)');gd.addColorStop(1,'rgba(239,68,68,0)');
-  cx.beginPath();H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.n-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
+  var gd=cx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,cl[1]+'.2)');gd.addColorStop(1,cl[1]+'0)');
+  cx.beginPath();H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r[f]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
   cx.lineTo(pl+st*(H.length-1),HH-pb);cx.lineTo(pl,HH-pb);cx.closePath();cx.fillStyle=gd;cx.fill();
-  cx.beginPath();cx.strokeStyle='#ef4444';cx.lineWidth=2;cx.lineJoin='round';
-  H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r.n-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();
-  var la=H[H.length-1],lx=pl+st*(H.length-1),ly=pt+(1-(la.n-mn)/sp)*ph;
-  cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle='#ef4444';cx.fill();
-  cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle='rgba(239,68,68,.3)';cx.lineWidth=2;cx.stroke();
-  cx.fillStyle='#ef4444';cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(la.n.toFixed(1)+'C',lx-10,ly-8);
+  cx.beginPath();cx.strokeStyle=cl[0];cx.lineWidth=2;cx.lineJoin='round';
+  H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r[f]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();
+  var la=H[H.length-1],lx=pl+st*(H.length-1),ly=pt+(1-(la[f]-mn)/sp)*ph;
+  cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle=cl[0];cx.fill();
+  cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle=cl[1]+'.3)';cx.lineWidth=2;cx.stroke();
+  cx.fillStyle=cl[0];cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(la[f].toFixed(1)+'C',lx-10,ly-8);
 }
 rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
-  if(!H.length){toast('無資料');return;}
-  var c='﻿時間,巢穴,活動區,出風口,風扇(%)\n'+H.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255);}).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(new Date().toISOString().slice(0,10))+'.csv';a.click();
-  toast('已導出 '+H.length+' 筆');
+  if(!allData.length){toast('無資料');return;}
+  var c='﻿時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-'))+'.csv';a.click();
+  toast('已導出 '+allData.length+' 筆');
 }
-function clearHist(){H=[];rs();toast('已清除');}
+function clearHist(){H=[];allData=[];rs();toast('已清除');}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
@@ -461,6 +471,7 @@ async function doPoll(){
     }
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
+    allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
     dC();
   }catch(e){
     document.getElementById('st').textContent='更新失敗';
@@ -483,6 +494,11 @@ function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;tTest('cool
 function toggleHeat(){_heating=!_heating;if(_heating){_cooling=false;tTest('heat',200);}else{tTest('heat',0);}}
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
 function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
+function setChart(v){
+  chartMode=v;
+  document.querySelectorAll('.ch-pill').forEach(function(e,i){e.className='pill ch-pill'+(i===v?' act':'');});
+  rs();
+}
 poll();
 </script>
 </body>
