@@ -117,11 +117,33 @@ void doScan() {
   } else {
     dsOk = false;
     t = NAN;
-    Serial.println("[DS18B20] 沒找到裝置");
+
+    // Raw OneWire 重置脈衝檢測
+    ds.reset_search();
+    delay(10);
+    bool present = !ds.reset();   // reset() returns 1 if no device (pulled low fails)
+    Serial.printf("[DS18B20] raw reset pulse -> present=%d (1=有裝置應答, 0=無裝置)\n", present);
+
+    // 嘗試 raw search
+    uint8_t rawAddr[8];
+    bool foundOne = ds.search(rawAddr);
+    if (foundOne) {
+      char buf[24];
+      sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
+        rawAddr[0], rawAddr[1], rawAddr[2], rawAddr[3],
+        rawAddr[4], rawAddr[5], rawAddr[6], rawAddr[7]);
+      Serial.printf("[DS18B20] raw search 找到: %s （DallasTemperature 卻回報0，可能是庫相容問題）\n", buf);
+    } else {
+      Serial.println("[DS18B20] raw search 也沒找到裝置（純硬體問題）");
+    }
+
     Serial.println("[DS18B20] 可能原因:");
-    Serial.println("[DS18B20]   1. DATA腳和VCC間缺少4.7kΩ上拉電阻");
-    Serial.println("[DS18B20]   2. VCC/GND接反");
-    Serial.println("[DS18B20]   3. GPIO腳選錯(板子印字vs GPIO編號)");
+    if (!present) {
+      Serial.println("[DS18B20]   *** 首要懷疑: DATA腳和VCC間缺少4.7kΩ上拉電阻 ***");
+    }
+    Serial.println("[DS18B20]   1. 缺少4.7kΩ上拉電阻(gpio到3.3V)");
+    Serial.println("[DS18B20]   2. DS18B20的VCC/GND沒接");
+    Serial.println("[DS18B20]   3. GPIO腳選錯(板子印字 vs GPIO編號)");
     Serial.println("[DS18B20]   4. DS18B20本身故障");
     Serial.println("[DS18B20] 每10秒將重試...");
   }
