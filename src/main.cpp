@@ -13,7 +13,7 @@
 #define FAN_CH 0
 #define TEC_L_CH 1
 #define TEC_R_CH 2
-#define DS18B20_PIN 13
+#define DS18B20_PIN 4
 
 OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
