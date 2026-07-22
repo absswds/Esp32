@@ -296,6 +296,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .fld input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
 .fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--c);cursor:pointer}
 .fld .rv{font-size:.85rem;font-weight:800;color:var(--c);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+.fld input.rv{background:0 0;border:1px solid transparent;outline:none;padding:2px 4px;border-radius:4px;width:60px;font-family:inherit;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.fld input.rv::-webkit-inner-spin-button,.fld input.rv::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.fld input.rv:focus{border-color:var(--c);color:var(--tx)}
 .info{font-size:.62rem;color:var(--t3);line-height:1.6;margin-top:4px}
 .info b{color:var(--t2)}
 .act-row{display:flex;gap:5px;margin-top:6px}
@@ -346,13 +349,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <h2>實驗目標溫度</h2>
   <div class="fld">
     <label>製冷目標</label>
-    <input type="range" min="10" max="35" step="0.5" value="20" id="ct" oninput="setCT(this.value)">
-    <span class="rv" id="ctV">20</span>
+    <input type="range" min="10" max="35" step="0.1" value="20" id="ct" oninput="setCT(this.value)">
+    <input type="number" class="rv" id="ctV" value="20" step="0.1" min="10" max="35" onchange="setCT(this.value)">
   </div>
   <div class="fld">
     <label>加熱目標</label>
-    <input type="range" min="15" max="40" step="0.5" value="28" id="ht" oninput="setHT(this.value)">
-    <span class="rv" id="htV">28</span>
+    <input type="range" min="15" max="40" step="0.1" value="28" id="ht" oninput="setHT(this.value)">
+    <input type="number" class="rv" id="htV" value="28" step="0.1" min="15" max="40" onchange="setHT(this.value)">
   </div>
   <div class="info">巢穴 ＞<span id="nct">20</span>°C 需製冷 | 巢穴 ＜<span id="nht">28</span>°C 需加熱</div>
 </div>
@@ -451,9 +454,9 @@ async function doPoll(){
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
     _cooling=d.cooling;_heating=d.heating;
     document.getElementById('ct').value=d.coolTarget;
-    document.getElementById('ctV').textContent=d.coolTarget.toFixed(1);
+    document.getElementById('ctV').value=d.coolTarget.toFixed(1);
     document.getElementById('ht').value=d.heatTarget;
-    document.getElementById('htV').textContent=d.heatTarget.toFixed(1);
+    document.getElementById('htV').value=d.heatTarget.toFixed(1);
     document.getElementById('nct').textContent=d.coolTarget.toFixed(1);
     document.getElementById('nht').textContent=d.heatTarget.toFixed(1);
     document.getElementById('smin').value=d.safeMin;
@@ -480,8 +483,24 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
-function setCT(v){document.getElementById('ctV').textContent=parseFloat(v).toFixed(1);document.getElementById('nct').textContent=parseFloat(v).toFixed(1);fetch('/control?coolTarget='+v);}
-function setHT(v){document.getElementById('htV').textContent=parseFloat(v).toFixed(1);document.getElementById('nht').textContent=parseFloat(v).toFixed(1);fetch('/control?heatTarget='+v);}
+function setCT(v){
+  v=parseFloat(v);
+  if(isNaN(v))return;
+  v=Math.round(v*10)/10;
+  document.getElementById('ctV').value=v.toFixed(1);
+  document.getElementById('ct').value=v;
+  document.getElementById('nct').textContent=v.toFixed(1);
+  fetch('/control?coolTarget='+v);
+}
+function setHT(v){
+  v=parseFloat(v);
+  if(isNaN(v))return;
+  v=Math.round(v*10)/10;
+  document.getElementById('htV').value=v.toFixed(1);
+  document.getElementById('ht').value=v;
+  document.getElementById('nht').textContent=v.toFixed(1);
+  fetch('/control?heatTarget='+v);
+}
 function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
 function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
 function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);fetch('/control?ventMax='+v);}
