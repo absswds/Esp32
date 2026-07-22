@@ -24,6 +24,7 @@ int fanSpeed = 0;
 float coolStop = 26.0;
 float heatStop = 28.0;
 unsigned long lastRead = 0;
+unsigned long lastScan = 0;
 
 bool systemOn = false;
 bool cooling = false;
@@ -32,6 +33,8 @@ bool dsOk = false;
 bool fanManual = false;
 bool tecManual = false;
 bool manualMode = false;
+bool convPending = false;
+unsigned long convStart = 0;
 
 float safeMin = 10.0;
 float safeMax = 40.0;
@@ -88,9 +91,53 @@ void controlTemp() {
 
 float readTemps[3] = {NAN, NAN, NAN};
 
+void doScan() {
+  Serial.println("[DS18B20] 開始掃描匯流排...");
+  pinMode(DS18B20_PIN, INPUT_PULLUP);
+  delay(10);
+  int val = digitalRead(DS18B20_PIN);
+  Serial.printf("[DS18B20] GPIO%d 電位: %d (1=HIGH=上拉OK, 0=LOW=可能短路)\n", DS18B20_PIN, val);
+  dt.begin();
+  int cnt = dt.getDeviceCount();
+  Serial.printf("[DS18B20] getDeviceCount=%d\n", cnt);
+  if (cnt > 0) {
+    dsOk = true;
+    dt.setWaitForConversion(false);
+    dt.setResolution(11);
+    DeviceAddress addr;
+    for (int i = 0; i < cnt && i < 3; i++) {
+      if (dt.getAddress(addr, i)) {
+        char buf[24];
+        sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
+          addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
+        Serial.printf("[DS18B20]   [%d] %s\n", i, buf);
+      }
+    }
+    Serial.printf("[DS18B20] 成功, count=%d\n", cnt);
+  } else {
+    dsOk = false;
+    t = NAN;
+    Serial.println("[DS18B20] 沒找到裝置");
+    Serial.println("[DS18B20] 可能原因:");
+    Serial.println("[DS18B20]   1. DATA腳和VCC間缺少4.7kΩ上拉電阻");
+    Serial.println("[DS18B20]   2. VCC/GND接反");
+    Serial.println("[DS18B20]   3. GPIO腳選錯(板子印字vs GPIO編號)");
+    Serial.println("[DS18B20]   4. DS18B20本身故障");
+    Serial.println("[DS18B20] 每10秒將重試...");
+  }
+}
+
 void readSensor() {
   if (!dsOk) return;
-  dt.requestTemperatures();
+  if (!convPending) {
+    dt.requestTemperatures();
+    convPending = true;
+    convStart = millis();
+    return;
+  }
+  if (millis() - convStart < 750) return;
+  convPending = false;
+
   int n = dt.getDeviceCount();
   float sum = 0;
   int valid = 0;
@@ -98,6 +145,7 @@ void readSensor() {
     float v = dt.getTempCByIndex(i);
     if (v == DEVICE_DISCONNECTED_F || isnan(v)) {
       Serial.printf("[DS18BOT%d] 斷線\n", i);
+      readTemps[i] = NAN;
       continue;
     }
     readTemps[i] = v;
@@ -128,7 +176,7 @@ void handleData() {
   if (!dsOk) { sendJson("DS18B20 未連線"); return; }
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
   int n = dt.getDeviceCount();
-  char buf[440];
+  char buf[640];
   snprintf(buf, sizeof(buf),
     "{\"ok\":true,\"temperature\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
     t, readTemps[0], readTemps[1], readTemps[2], n,
@@ -165,6 +213,16 @@ void handleControl() {
   }
   controlTemp();
   server.send(200, "text/plain", "OK");
+}
+
+void handleDiag() {
+  char buf[512];
+  int pinVal = digitalRead(DS18B20_PIN);
+  int cnt = dt.getDeviceCount();
+  snprintf(buf, sizeof(buf),
+    "{\"pin\":%d,\"pinState\":%d,\"dsOk\":%s,\"deviceCount\":%d,\"temp\":%.2f,\"conversionPending\":%s}",
+    DS18B20_PIN, pinVal, dsOk ? "true" : "false", cnt, t, convPending ? "true" : "false");
+  server.send(200, "application/json", buf);
 }
 
 void handleTest() {
@@ -431,6 +489,9 @@ void handleRoot() {
 void setup() {
   Serial.begin(115200);
   delay(500);
+  Serial.println("\n\n========== TEC 啟動 ==========");
+  Serial.printf("晶片: ESP32, 編譯: %s %s\n", __DATE__, __TIME__);
+  Serial.printf("DS18B20 接腳: GPIO%d\n", DS18B20_PIN);
 
   pinMode(TEC_EN, OUTPUT);
   digitalWrite(TEC_EN, LOW);
@@ -446,29 +507,30 @@ void setup() {
   setTec(0, 0);
 
   WiFi.softAP("ESP32-TEMP", "12345678");
-  Serial.print("[WiFi] ");
+  Serial.print("[WiFi] AP IP: ");
   Serial.println(WiFi.softAPIP());
 
-  dt.begin();
-  dsOk = dt.getDeviceCount() > 0;
-  if (dsOk) {
-    dt.setResolution(11);
-    Serial.printf("[DS18B20] OK, count=%d\n", dt.getDeviceCount());
-  } else {
-    Serial.println("[DS18B20] 未找到");
-  }
+  doScan();
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
+  server.on("/diag", handleDiag);
   server.on("/control", handleControl);
   server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("[Server] 啟動完成");
+  Serial.println("==============================\n");
 }
 
 void loop() {
   server.handleClient();
+
+  if (!dsOk && millis() - lastScan >= 10000) {
+    lastScan = millis();
+    doScan();
+  }
+
   if (millis() - lastRead >= 2000) {
     lastRead = millis();
     readSensor();
