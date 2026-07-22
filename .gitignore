@@ -6,3 +6,7 @@
 .opencode
 DESIGN.md
 PRODUCT.md
+include/README
+lib/README
+test/README
+pdf_output.txt
