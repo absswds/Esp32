@@ -19,10 +19,12 @@ OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
 WebServer server(80);
 
-// 三顆 DS18B20 角色
-//  [0] = 巢穴內部 (溫控主感測)
-//  [1] = 活動區   (環境監測，不參與控制)
-//  [2] = 出風口   (硬體保護，緊急斷電)
+// 三顆 DS18B20 — ROM 位址認人，不靠匯流排順序
+DeviceAddress nestAddr = {0x28, 0xAE, 0xB0, 0xC9, 0x00, 0x00, 0x00, 0xB4};
+DeviceAddress roomAddr = {0x28, 0x4F, 0x59, 0x22, 0x00, 0x00, 0x00, 0x5E};
+DeviceAddress ventAddr = {0x28, 0x20, 0xD7, 0x20, 0x00, 0x00, 0x00, 0xD7};
+bool nestOK = false, roomOK = false, ventOK = false;
+
 float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
 
@@ -154,15 +156,14 @@ void readSensor() {
   if (millis() - convStart < 750) return;
   convPending = false;
 
-  int n = dt.getDeviceCount();
-  for (int i = 0; i < n && i < 3; i++) {
-    float v = dt.getTempCByIndex(i);
-    if (v == DEVICE_DISCONNECTED_F || isnan(v)) {
-      Serial.printf("[DS18B20][%d] 斷線\n", i);
+  readTemps[0] = nestOK ? dt.getTempC(nestAddr) : DEVICE_DISCONNECTED_F;
+  readTemps[1] = roomOK ? dt.getTempC(roomAddr) : DEVICE_DISCONNECTED_F;
+  readTemps[2] = ventOK ? dt.getTempC(ventAddr) : DEVICE_DISCONNECTED_F;
+
+  for (int i = 0; i < 3; i++) {
+    if (readTemps[i] == DEVICE_DISCONNECTED_F || isnan(readTemps[i])) {
       readTemps[i] = NAN;
-      continue;
     }
-    readTemps[i] = v;
   }
   nestT = readTemps[0];
   roomT = readTemps[1];
@@ -189,7 +190,7 @@ void sendJson(const char* msg) {
 void handleData() {
   if (!dsOk) { sendJson("DS18B20 未連線"); return; }
   if (isnan(nestT)) { sendJson("等待感測資料..."); return; }
-  int n = dt.getDeviceCount();
+  int n = (nestOK ? 1 : 0) + (roomOK ? 1 : 0) + (ventOK ? 1 : 0);
   char buf[700];
   snprintf(buf, sizeof(buf),
     "{\"ok\":true,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolTarget\":%.1f,\"heatTarget\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
@@ -210,10 +211,10 @@ void handleControl() {
     Serial.printf("[SYS] %s 模式\n", manualMode ? "手動" : "自動");
   }
   if (server.hasArg("coolTarget")) {
-    coolTarget = constrain(server.arg("coolTarget").toFloat(), 0, 30);
+    coolTarget = constrain(server.arg("coolTarget").toFloat(), (float)10, (float)35);
   }
   if (server.hasArg("heatTarget")) {
-    heatTarget = constrain(server.arg("heatTarget").toFloat(), 0, 35);
+    heatTarget = constrain(server.arg("heatTarget").toFloat(), (float)15, (float)40);
   }
   if (server.hasArg("safeMin")) {
     safeMin = constrain(server.arg("safeMin").toFloat(), 0, 20);
@@ -525,6 +526,11 @@ poll();
 
 void handleRoot() { server.send_P(200, "text/html; charset=utf-8", INDEX); }
 
+bool sameAddr(DeviceAddress a, DeviceAddress b) {
+  for (int i = 0; i < 8; i++) { if (a[i] != b[i]) return false; }
+  return true;
+}
+
 void doScan() {
   Serial.println("[DS18B20] 掃描匯流排...");
   dt.begin();
@@ -537,16 +543,22 @@ void doScan() {
     dsOk = true;
     dt.setWaitForConversion(false);
     dt.setResolution(11);
+    nestOK = false; roomOK = false; ventOK = false;
     DeviceAddress addr;
     for (int i = 0; i < cnt && i < 3; i++) {
       if (dt.getAddress(addr, i)) {
+        // ROM 位址認人
+        if (sameAddr(addr, nestAddr)) { nestOK = true; Serial.print("[巢穴] "); }
+        else if (sameAddr(addr, roomAddr)) { roomOK = true; Serial.print("[活動] "); }
+        else if (sameAddr(addr, ventAddr)) { ventOK = true; Serial.print("[出風] "); }
+        else { Serial.print("[?] "); }
         char buf[24];
         sprintf(buf, "%02X%02X%02X%02X%02X%02X%02X%02X",
           addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
-        Serial.printf("[DS18B20] [%d] %s\n", i, buf);
+        Serial.println(buf);
       }
     }
-    Serial.printf("[DS18B20] 就緒 count=%d\n", cnt);
+    Serial.printf("[DS18B20] 就緒 巢穴=%d 活動=%d 出風=%d\n", nestOK, roomOK, ventOK);
   } else {
     dsOk = false;
     nestT = NAN; roomT = NAN; ventT = NAN;
