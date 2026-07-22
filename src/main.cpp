@@ -86,19 +86,33 @@ void controlTemp() {
   }
 }
 
+float readTemps[3] = {NAN, NAN, NAN};
+
 void readSensor() {
   if (!dsOk) return;
   dt.requestTemperatures();
-  t = dt.getTempCByIndex(0);
-  if (t == DEVICE_DISCONNECTED_RAW || isnan(t)) {
-    Serial.println("[DS18B20] 讀取失敗");
-    dsOk = false;
+  int n = dt.getDeviceCount();
+  float sum = 0;
+  int valid = 0;
+  for (int i = 0; i < n && i < 3; i++) {
+    float v = dt.getTempCByIndex(i);
+    if (v == DEVICE_DISCONNECTED_F || isnan(v)) {
+      Serial.printf("[DS18BOT%d] 斷線\n", i);
+      continue;
+    }
+    readTemps[i] = v;
+    sum += v;
+    valid++;
+  }
+  if (valid == 0) {
+    Serial.println("[DS18B20] 全數斷線");
     t = NAN;
     return;
   }
+  t = sum / valid;
   controlTemp();
-  Serial.printf("[T:%.1f] %s %s Fan:%d\n",
-                t,
+  Serial.printf("[T:%.1f (avg %d/%d)] %s %s Fan:%d\n",
+                t, valid, n,
                 cooling ? "COOL" : heating ? "HEAT" : "IDLE",
                 systemOn ? "ON" : "OFF", fanSpeed);
 }
@@ -113,10 +127,12 @@ void sendJson(const char* msg) {
 void handleData() {
   if (!dsOk) { sendJson("DS18B20 未連線"); return; }
   if (isnan(t)) { sendJson("等待感測資料..."); return; }
-  char buf[340];
+  int n = dt.getDeviceCount();
+  char buf[440];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"temperature\":%.2f,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
-    t, fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
+    "{\"ok\":true,\"temperature\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolStop\":%.1f,\"heatStop\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f}",
+    t, readTemps[0], readTemps[1], readTemps[2], n,
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolStop, heatStop, safeMin, safeMax);
   server.send(200, "application/json", buf);
 }
 
