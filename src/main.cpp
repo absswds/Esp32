@@ -1,4 +1,4 @@
-#include <Arduino.h>
+﻿#include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <OneWire.h>
@@ -418,7 +418,7 @@ rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!H.length){toast('無資料');return;}
-  var c='﻿時間,巢穴(°C),活動區(°C),出風口(°C)\n'+H.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1);}).join('\n');
+  var c='﻿時間,巢穴,活動區,出風口,風扇(%)\n'+H.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255);}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(new Date().toISOString().slice(0,10))+'.csv';a.click();
   toast('已導出 '+H.length+' 筆');
 }
@@ -459,7 +459,7 @@ async function doPoll(){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
-    H.push({n:d.nest,r:d.room,v:d.vent,ti:new Date().toLocaleTimeString()});
+    H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     dC();
   }catch(e){
