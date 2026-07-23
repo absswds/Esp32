@@ -696,19 +696,19 @@ void updateOLED() {
     u8g2.setCursor(0, 10);
     u8g2.print("Nest:");
     u8g2.setCursor(50, 10);
-    if (isnan(nestT)) u8g2.print("---"); else u8g2.print(nestT, 1);
+    if (isnan(nestT)) u8g2.print("---"); else u8g2.print(nestT, 2);
     u8g2.print("C");
 
     u8g2.setCursor(0, 22);
     u8g2.print("Room:");
     u8g2.setCursor(50, 22);
-    if (isnan(roomT)) u8g2.print("---"); else u8g2.print(roomT, 1);
+    if (isnan(roomT)) u8g2.print("---"); else u8g2.print(roomT, 2);
     u8g2.print("C");
 
     u8g2.setCursor(0, 34);
     u8g2.print("Vent:");
     u8g2.setCursor(50, 34);
-    if (isnan(ventT)) u8g2.print("---"); else u8g2.print(ventT, 1);
+    if (isnan(ventT)) u8g2.print("---"); else u8g2.print(ventT, 2);
     u8g2.print("C");
 
     // 分隔線
