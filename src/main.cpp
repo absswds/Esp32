@@ -176,7 +176,7 @@ void controlTemp() {
     heatIntegral = 0;  // 重置對向積分
     if (coolDiff < 2.0) coolIntegral += coolDiff * KI;
     coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
-    float power = constrain(coolDiff / 5.0 + coolIntegral, 0.15, 1.0);
+    float power = constrain(coolDiff / 2.5 + coolIntegral, 0.40, 1.0);
 
     // #3 降溫速率限制 (溫差大於3°C才啟動，小溫差不需要限速)
     if (coolDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
@@ -193,7 +193,7 @@ void controlTemp() {
     coolIntegral = 0;
     if (heatDiff < 2.0) heatIntegral += heatDiff * KI;
     heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
-    float power = constrain(heatDiff / 5.0 + heatIntegral, 0.15, 1.0);
+    float power = constrain(heatDiff / 2.5 + heatIntegral, 0.40, 1.0);
 
     // #2 甦醒速率限制 (溫差大於3°C才啟動)
     if (heatDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
