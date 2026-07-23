@@ -35,7 +35,7 @@ float readTemps[3] = {NAN, NAN, NAN};
 
 int fanSpeed = 0;
 float targetTemp = 28.0;   // 單一目標溫度
-float hysteresis = 0.5;   // 滯回帶寬：target±hysteresis 為死區
+float hysteresis = 0.5;   // 維持範圍：target±hysteresis 內不動作
 unsigned long lastRead = 0;
 unsigned long lastScan = 0;
 
@@ -511,11 +511,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <input type="number" class="rv" id="tgtV" value="28" step="0.1" min="10" max="40" onchange="setTGT(this.value)">
   </div>
   <div class="fld">
-    <label>滯回帶寬</label>
+    <label>維持範圍</label>
     <input type="range" min="0.1" max="3" step="0.1" value="0.5" id="hyst" oninput="setHYST(this.value)">
     <input type="number" class="rv" id="hystV" value="0.5" step="0.1" min="0.1" max="3" onchange="setHYST(this.value)">
   </div>
-  <div class="info">巢穴 ＞<span id="nct">28.5</span>°C 製冷 | 巢穴 ＜<span id="nht">27.5</span>°C 加熱 | 中間維持</div>
+  <div class="info">巢穴 ＞<span id="nct">28.5</span>°C 製冷 | ＜<span id="nht">27.5</span>°C 加熱 | 中間不動作</div>
 </div>
 <div class="sec">
   <h2>安全保護</h2>
