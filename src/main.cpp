@@ -654,7 +654,6 @@ function setTGT(v){
   v=Math.round(v*100)/100;
   document.getElementById('tgtV').value=v.toFixed(1);
   document.getElementById('tgt').value=v;
-  ue=true;setTimeout(function(){ue=false;},3000);
   fetch('/control?targetTemp='+v,{method:'POST'});
 }
 function setHYST(v){
@@ -663,7 +662,6 @@ function setHYST(v){
   v=Math.round(v*100)/100;
   document.getElementById('hystV').value=v.toFixed(2);
   document.getElementById('hyst').value=v;
-  ue=true;setTimeout(function(){ue=false;},3000);
   fetch('/control?hysteresis='+v,{method:'POST'});
 }
 function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v,{method:'POST'});}
@@ -694,6 +692,11 @@ document.querySelectorAll('input[type=range]').forEach(function(s){
     s.value=v;
     s.dispatchEvent(new Event('input'));
   },{passive:false});
+});
+['tgtV','hystV'].forEach(function(id){
+  var el=document.getElementById(id);
+  el.addEventListener('focus',function(){ue=true;});
+  el.addEventListener('blur',function(){ue=false;el.dispatchEvent(new Event('change'));});
 });
 poll();
 </script>
