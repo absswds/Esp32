@@ -171,7 +171,7 @@ void controlTemp() {
   float coolDiff = nestT - (targetTemp + hysteresis);  // 超過目標+滯回才製冷
   float heatDiff = (targetTemp - hysteresis) - nestT;  // 低於目標-滯回才加熱
 
-  if (coolDiff >= hysteresis) {
+  if (nestT > targetTemp + hysteresis) {
     // 製冷模式 — PI 控制（僅在小偏差時累積積分，防止長程 windup）
     heatIntegral = 0;  // 重置對向積分
     if (coolDiff < 2.0) coolIntegral += coolDiff * KI;
@@ -188,7 +188,7 @@ void controlTemp() {
 
     setTecPwm(power, true);
     if (!fanManual) setFan(100 + (int)(155 * power));
-  } else if (heatDiff >= hysteresis) {
+  } else if (nestT < targetTemp - hysteresis) {
     // 加熱模式 — PI 控制（僅在小偏差時累積積分）
     coolIntegral = 0;
     if (heatDiff < 2.0) heatIntegral += heatDiff * KI;
