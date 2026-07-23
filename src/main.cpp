@@ -172,7 +172,7 @@ void controlTemp() {
   float coolDiff = nestT - coolTarget;  // +=太熱需製冷
   float heatDiff = heatTarget - nestT;  // +=太冷需加熱
 
-  if (coolDiff > hysteresis) {
+  if (coolDiff >= hysteresis) {
     // 製冷模式 — PI 控制
     heatIntegral = 0;  // 重置對向積分
     coolIntegral += coolDiff * KI;
@@ -189,7 +189,7 @@ void controlTemp() {
 
     setTecPwm(power, true);
     if (!fanManual) setFan(100 + (int)(155 * power));
-  } else if (heatDiff > hysteresis) {
+  } else if (heatDiff >= hysteresis) {
     // 加熱模式 — PI 控制
     coolIntegral = 0;
     heatIntegral += heatDiff * KI;
