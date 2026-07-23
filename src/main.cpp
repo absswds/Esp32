@@ -207,7 +207,10 @@ void controlTemp() {
     setTecPwm(power, false);
     if (!fanManual) setFan(80 + (int)(175 * power));
   } else {
-    // 在目標範圍內 → 關 TEC，延遲降風扇防熱回灌 (#17)
+    // 在目標範圍內 → 關 TEC，PI 積分衰退 (#15)
+    coolIntegral *= 0.95;
+    heatIntegral *= 0.95;
+    // #17 風扇延遲防熱回灌
     if (cooling || heating) {
       fanAfterRunTimer = millis();
       Serial.printf("[FAN] 熱回灌延遲啟動, timer=%lu\n", fanAfterRunTimer);
