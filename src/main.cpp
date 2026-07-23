@@ -34,9 +34,8 @@ float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
 
 int fanSpeed = 0;
-float coolTarget = 20.0;  // 你可從網頁調（實際最低約26°C）
-float heatTarget = 28.0;  // 你可從網頁調
-float hysteresis = 0.3;   // 窄滯回，配合實際窄工作區間
+float targetTemp = 28.0;   // 單一目標溫度
+float hysteresis = 0.5;   // 滯回帶寬：target±hysteresis 為死區
 unsigned long lastRead = 0;
 unsigned long lastScan = 0;
 
@@ -169,8 +168,8 @@ void controlTemp() {
   lastControlTime = millis();
 
   // === PI 溫控 (#15) + 速率限制 (#2 #3) + 熱回灌 (#17) ===
-  float coolDiff = nestT - coolTarget;  // +=太熱需製冷
-  float heatDiff = heatTarget - nestT;  // +=太冷需加熱
+  float coolDiff = nestT - (targetTemp + hysteresis);  // 超過目標+滯回才製冷
+  float heatDiff = (targetTemp - hysteresis) - nestT;  // 低於目標-滯回才加熱
 
   if (coolDiff >= hysteresis) {
     // 製冷模式 — PI 控制（僅在小偏差時累積積分，防止長程 windup）
@@ -292,9 +291,9 @@ void handleData() {
   int n = (nestOK ? 1 : 0) + (roomOK ? 1 : 0) + (ventOK ? 1 : 0);
   char buf[700];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"coolTarget\":%.1f,\"heatTarget\":%.1f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    "{\"ok\":true,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
     nestT, roomT, ventT, readTemps[0], readTemps[1], readTemps[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", coolTarget, heatTarget, safeMin, safeMax, ventMax);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
 
@@ -315,12 +314,12 @@ void handleControl() {
     fanManual = manualMode;
     Serial.printf("[SYS] %s 模式\n", manualMode ? "手動" : "自動");
   }
-  if (server.hasArg("coolTarget")) {
-    coolTarget = constrain(server.arg("coolTarget").toFloat(), (float)10, (float)35);
+  if (server.hasArg("targetTemp")) {
+    targetTemp = constrain(server.arg("targetTemp").toFloat(), (float)10, (float)40);
     changed = true;
   }
-  if (server.hasArg("heatTarget")) {
-    heatTarget = constrain(server.arg("heatTarget").toFloat(), (float)15, (float)40);
+  if (server.hasArg("hysteresis")) {
+    hysteresis = constrain(server.arg("hysteresis").toFloat(), (float)0.1, (float)3.0);
     changed = true;
   }
   if (server.hasArg("safeMin")) {
@@ -356,8 +355,8 @@ void handleControl() {
 void saveState() {
   EEPROM.write(0, 0xAA);           // valid flag
   EEPROM.write(1, systemOn ? 1 : 0);
-  EEPROM.put(2, coolTarget);
-  EEPROM.put(6, heatTarget);
+  EEPROM.put(2, targetTemp);
+  EEPROM.put(6, hysteresis);
   EEPROM.put(10, safeMin);
   EEPROM.put(14, safeMax);
   EEPROM.put(18, ventMax);
@@ -374,8 +373,8 @@ void loadState() {
     return;
   }
   systemOn = EEPROM.read(1) == 1;
-  EEPROM.get(2, coolTarget);
-  EEPROM.get(6, heatTarget);
+  EEPROM.get(2, targetTemp);
+  EEPROM.get(6, hysteresis);
   EEPROM.get(10, safeMin);
   EEPROM.get(14, safeMax);
   EEPROM.get(18, ventMax);
@@ -383,8 +382,8 @@ void loadState() {
   EEPROM.get(26, roomOffset);
   EEPROM.get(30, ventOffset);
   if (systemOn) startAll();
-  Serial.printf("[EEPROM] 已恢復: sys=%d cool=%.1f heat=%.1f safe=[%.0f-%.0f] ventMax=%.0f\n",
-    systemOn, coolTarget, heatTarget, safeMin, safeMax, ventMax);
+  Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f\n",
+    systemOn, targetTemp, hysteresis, safeMin, safeMax, ventMax);
 }
 
 void handleDiag() {
@@ -507,16 +506,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 <div class="sec">
   <h2>實驗目標溫度</h2>
   <div class="fld">
-    <label>製冷目標</label>
-    <input type="range" min="10" max="35" step="0.1" value="20" id="ct" oninput="setCT(this.value)">
-    <input type="number" class="rv" id="ctV" value="20" step="0.1" min="10" max="35" onchange="setCT(this.value)">
+    <label>目標溫度</label>
+    <input type="range" min="10" max="40" step="0.1" value="28" id="tgt" oninput="setTGT(this.value)">
+    <input type="number" class="rv" id="tgtV" value="28" step="0.1" min="10" max="40" onchange="setTGT(this.value)">
   </div>
   <div class="fld">
-    <label>加熱目標</label>
-    <input type="range" min="15" max="40" step="0.1" value="28" id="ht" oninput="setHT(this.value)">
-    <input type="number" class="rv" id="htV" value="28" step="0.1" min="15" max="40" onchange="setHT(this.value)">
+    <label>滯回帶寬</label>
+    <input type="range" min="0.1" max="3" step="0.1" value="0.5" id="hyst" oninput="setHYST(this.value)">
+    <input type="number" class="rv" id="hystV" value="0.5" step="0.1" min="0.1" max="3" onchange="setHYST(this.value)">
   </div>
-  <div class="info">巢穴 ＞<span id="nct">20</span>°C 需製冷 | 巢穴 ＜<span id="nht">28</span>°C 需加熱</div>
+  <div class="info">巢穴 ＞<span id="nct">28.5</span>°C 製冷 | 巢穴 ＜<span id="nht">27.5</span>°C 加熱 | 中間維持</div>
 </div>
 <div class="sec">
   <h2>安全保護</h2>
@@ -616,12 +615,12 @@ async function doPoll(){
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
     _cooling=d.cooling;_heating=d.heating;
-    document.getElementById('ct').value=d.coolTarget;
-    document.getElementById('ctV').value=d.coolTarget.toFixed(1);
-    document.getElementById('ht').value=d.heatTarget;
-    document.getElementById('htV').value=d.heatTarget.toFixed(1);
-    document.getElementById('nct').textContent=d.coolTarget.toFixed(1);
-    document.getElementById('nht').textContent=d.heatTarget.toFixed(1);
+    document.getElementById('tgt').value=d.targetTemp;
+    document.getElementById('tgtV').value=d.targetTemp.toFixed(1);
+    document.getElementById('hyst').value=d.hysteresis;
+    document.getElementById('hystV').value=d.hysteresis.toFixed(2);
+    document.getElementById('nct').textContent=(d.targetTemp+d.hysteresis).toFixed(1);
+    document.getElementById('nht').textContent=(d.targetTemp-d.hysteresis).toFixed(1);
     document.getElementById('smin').value=d.safeMin;
     document.getElementById('sminV').textContent=d.safeMin.toFixed(1);
     document.getElementById('smax').value=d.safeMax;
@@ -647,23 +646,21 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0),{method:'POST'});}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'}).then(function(){doPoll();});}
-function setCT(v){
+function setTGT(v){
   v=parseFloat(v);
   if(isNaN(v))return;
   v=Math.round(v*10)/10;
-  document.getElementById('ctV').value=v.toFixed(1);
-  document.getElementById('ct').value=v;
-  document.getElementById('nct').textContent=v.toFixed(1);
-  fetch('/control?coolTarget='+v,{method:'POST'});
+  document.getElementById('tgtV').value=v.toFixed(1);
+  document.getElementById('tgt').value=v;
+  fetch('/control?targetTemp='+v,{method:'POST'});
 }
-function setHT(v){
+function setHYST(v){
   v=parseFloat(v);
   if(isNaN(v))return;
   v=Math.round(v*10)/10;
-  document.getElementById('htV').value=v.toFixed(1);
-  document.getElementById('ht').value=v;
-  document.getElementById('nht').textContent=v.toFixed(1);
-  fetch('/control?heatTarget='+v,{method:'POST'});
+  document.getElementById('hystV').value=v.toFixed(1);
+  document.getElementById('hyst').value=v;
+  fetch('/control?hysteresis='+v,{method:'POST'});
 }
 function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v,{method:'POST'});}
 function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v,{method:'POST'});}
@@ -738,7 +735,7 @@ void updateOLED() {
     // 目標溫度
     u8g2.setCursor(0, 62);
     u8g2.print("Tgt:");
-    u8g2.print(cooling ? coolTarget : heatTarget, 1);
+    u8g2.print(targetTemp, 1);
     u8g2.print("C");
     u8g2.setCursor(64, 62);
     u8g2.print(manualMode ? "Manual" : "Auto");
