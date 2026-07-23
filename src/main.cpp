@@ -131,10 +131,20 @@ void setTecPwm(float power, bool isCool) {
 
 void controlTemp() {
   if (!systemOn || tecManual || manualMode) return;
-  if (isnan(nestT)) return;
+
+  // === 保護 0：感測器斷線 → 緊急斷電（#7）===
+  // 巢穴斷線：無法量測就無法控制，保持最後狀態可能過熱/過冷
+  // 出風口斷線：過熱保護失效，風險不可接受
+  if (isnan(nestT) || isnan(ventT)) {
+    emergencyStop();
+    saveState();
+    Serial.printf("[SAFE] 感測器斷線 巢穴=%s 出風口=%s → 緊急關閉\n",
+                  isnan(nestT) ? "X" : "OK", isnan(ventT) ? "X" : "OK");
+    return;
+  }
 
   // === 保護 1：出風口過熱（硬體安全，最高優先級）===
-  if (!isnan(ventT) && ventT >= ventMax) {
+  if (ventT >= ventMax) {
     emergencyStop();
     saveState();  // #31 保存緊急關閉狀態
     return;

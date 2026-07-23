@@ -503,7 +503,7 @@ POST /control?system=1&targetTemp=28.0&hysteresis=0.5
 
 ## 參考文獻
 
-- **Lopatko, O.V. et al. (1999)** — "Arousal patterns in the fat-tailed dunnart (Sminthopsis crassicaudata)" — 甦醒速率 0.7–1.0°C/min，為本系統比例溫控的設計基準
+- **Lopatko, O.V. et al. (1999)** — "Arousal patterns in the fat-tailed dunnart (Sminthopsis crassicaudata)" — 甦醒速率 0.7–1.0°C/min，為本系統溫控設計基準
 - **DFRobot FireBeetle 2 ESP32-E 技術文件** — 腳位對應與 strapping pin 警告
 - **Dallas Semiconductor DS18B20 Datasheet** — OneWire 時序需求與 12-bit 精度規格
 - **TEC1-12703 / TEC1-12706 規格書** — 標稱電流 3A/6A，12V，ΔTmax 68°C
