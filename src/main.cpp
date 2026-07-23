@@ -48,6 +48,7 @@ bool tecManual = false;
 bool manualMode = false;
 bool convPending = false;
 unsigned long convStart = 0;
+bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -224,6 +225,7 @@ void readSensor() {
     }
   }
 
+  sensorInit = true;
   controlTemp();
   Serial.printf("[巢穴:%.1f 活動:%.1f 出風:%.1f] %s %s Fan:%d\n",
                 nestT, roomT, ventT,
@@ -806,7 +808,8 @@ void loop() {
   server.handleClient();
 
   // 感測器斷線保護（獨立於 readSensor，後者在 !dsOk 時不執行）
-  if (systemOn && (isnan(nestT) || isnan(ventT) || !dsOk)) { emergencyStop(); saveState(); }
+  // sensorInit 確保首次讀取完成前不誤觸（nestT 初始值為 NAN）
+  if (systemOn && (!dsOk || (sensorInit && (isnan(nestT) || isnan(ventT))))) { emergencyStop(); saveState(); }
 
   // #17 風扇延遲（系統關閉後吹散 TEC 餘熱）
   if (!systemOn && fanAfterRunTimer > 0 && !fanManual) {
