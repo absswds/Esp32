@@ -204,11 +204,15 @@ void controlTemp() {
     if (!fanManual) setFan(80 + (int)(175 * power));
   } else {
     // 在目標範圍內 → 關 TEC，延遲降風扇防熱回灌 (#17)
-    if (cooling || heating) fanAfterRunTimer = millis();
+    if (cooling || heating) {
+      fanAfterRunTimer = millis();
+      Serial.printf("[FAN] 熱回灌延遲啟動, timer=%lu\n", fanAfterRunTimer);
+    }
     setTecPwm(0, true);
     if (!fanManual) {
       if (fanAfterRunTimer > 0 && millis() - fanAfterRunTimer < (unsigned long)FAN_AFTERRUN_MS) {
         setFan(FAN_AFTERRUN_SPEED);
+        Serial.printf("[FAN] 延遲中 speed=%d remain=%lu\n", FAN_AFTERRUN_SPEED, (unsigned long)FAN_AFTERRUN_MS - (millis() - fanAfterRunTimer));
       } else {
         fanAfterRunTimer = 0;
         setFan(40);
