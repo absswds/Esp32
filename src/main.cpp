@@ -12,7 +12,7 @@
 #define TEC_LPWM 26
 #define TEC_RPWM 25
 #define PWM_FREQ 25000
-#define PWM_RES 8         // 風扇 8-bit
+#define PWM_RES 10         // 風扇 10-bit（與 TEC 一致）
 #define TEC_PWM_RES 10    // TEC 10-bit (finer control)
 #define FAN_CH 0
 #define TEC_L_CH 1
@@ -72,7 +72,7 @@ void loadState();
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
-  ledcWrite(FAN_CH, fanSpeed);
+  ledcWrite(FAN_CH, fanSpeed * 4);  // 8-bit → 10-bit（255→1020）
 }
 
 void setTec(int cool, int heat) {
@@ -224,10 +224,6 @@ void readSensor() {
     }
   }
 
-  if (isnan(nestT)) {
-    Serial.println("[DS18B20] 巢穴感測器斷線");
-    return;
-  }
   controlTemp();
   Serial.printf("[巢穴:%.1f 活動:%.1f 出風:%.1f] %s %s Fan:%d\n",
                 nestT, roomT, ventT,
