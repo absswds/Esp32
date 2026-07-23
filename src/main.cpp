@@ -579,10 +579,12 @@ rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!allData.length){toast('無資料');return;}
-  var now=new Date(),ds=now.toISOString().slice(0,19).replace('T',' ').replace(/:/g,'-');
-  var meta='# TEC 蟄眠實驗\n# 導出時間: '+now.toLocaleString()+'\n';
+  var now=new Date(),ds=now.toLocaleString();
+  function pad(n){return String(n).padStart(2,'0');}
+  var fn='TEC_'+now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'_'+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds())+'.csv';
+  var meta='# TEC 蟄眠實驗\n# 導出時間: '+ds+'\n';
   var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(now.toISOString().slice(0,19).replace('T','_').replace(/:/g,'-'))+'.csv';a.click();
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
