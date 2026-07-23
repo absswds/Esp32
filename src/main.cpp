@@ -168,7 +168,7 @@ void controlTemp() {
         Serial.printf("[FAN] 延遲中 speed=%d remain=%lu\n", FAN_AFTERRUN_SPEED, (unsigned long)FAN_AFTERRUN_MS - (millis() - fanAfterRunTimer));
       } else {
         fanAfterRunTimer = 0;
-        setFan(40);
+        setFan(0);
       }
     }
   }
