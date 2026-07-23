@@ -4,13 +4,16 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
+#include <EEPROM.h>
+#include "esp_task_wdt.h"
 
 #define FAN_PIN 18
 #define TEC_EN 19
 #define TEC_LPWM 26
 #define TEC_RPWM 25
 #define PWM_FREQ 25000
-#define PWM_RES 8
+#define PWM_RES 8         // 風扇 8-bit
+#define TEC_PWM_RES 10    // TEC 10-bit (finer control)
 #define FAN_CH 0
 #define TEC_L_CH 1
 #define TEC_R_CH 2
@@ -52,12 +55,38 @@ float safeMin = 5.0;      // 巢穴最低溫（動物安全）
 float safeMax = 35.0;     // 巢穴最高溫（動物安全）
 float ventMax = 50.0;     // 出風口最高溫（硬體保護）
 
+// #18 溫度濾波 (指數移動平均)
+#define EMA_ALPHA 0.3f
+float nestFilt = NAN, roomFilt = NAN, ventFilt = NAN;
+
+// #15 PI 控制項
+float coolIntegral = 0, heatIntegral = 0;
+const float KI = 0.015f;     // 積分增益 (小值，慢速消除穩態誤差)
+const float KI_MAX = 0.5f;   // anti-windup 上限
+
+// #2 #3 速率限制 (°C/min)
+const float maxHeatRate = 1.0f;   // 甦醒速率上限 (論文 0.7-1.0)
+const float maxCoolRate = 0.5f;   // 降溫速率上限
+float prevNestT = NAN;
+unsigned long lastControlTime = 0;
+
+// #17 風扇延遲 (熱回灌)
+unsigned long fanAfterRunTimer = 0;
+const int FAN_AFTERRUN_MS = 10000;   // 關 TEC 後保持高風扇 10 秒
+const int FAN_AFTERRUN_SPEED = 200;  // ~78%
+
+// #16 感測器校準偏移
+float nestOffset = 0, roomOffset = 0, ventOffset = 0;
+
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
   ledcWrite(FAN_CH, fanSpeed);
 }
 
 void setTec(int cool, int heat) {
+  // Scale from 8-bit (test endpoint) to 10-bit
+  cool = constrain(cool * 4, 0, 1023);
+  heat = constrain(heat * 4, 0, 1023);
   cooling = cool > 0;
   heating = heat > 0;
   ledcWrite(TEC_L_CH, cool);
@@ -90,7 +119,7 @@ void emergencyStop() {
 
 void setTecPwm(float power, bool isCool) {
   // power: 0-1.0  (0=off, 1.0=full)
-  int pwmVal = constrain((int)(power * 255), 0, 255);
+  int pwmVal = constrain((int)(power * 1023), 0, 1023);
   if (isCool) {
     cooling = power > 0.05;
     heating = false;
@@ -111,6 +140,7 @@ void controlTemp() {
   // === 保護 1：出風口過熱（硬體安全，最高優先級）===
   if (!isnan(ventT) && ventT >= ventMax) {
     emergencyStop();
+    saveState();  // #31 保存緊急關閉狀態
     return;
   }
 
@@ -122,29 +152,66 @@ void controlTemp() {
     return;
   }
 
-  // === 比例溫控 ===
-  // 巢穴 > coolTarget+hysteresis → 製冷，PWM 隨偏差增大
-  // 巢穴 < heatTarget-hysteresis → 加熱，PWM 隨偏差增大
-  // 兩者之間 → 關 TEC，低風扇
+  // === 速率計算 (#2 #3) ===
+  float dtMin = 0;
+  if (lastControlTime > 0) {
+    dtMin = (millis() - lastControlTime) / 60000.0;
+    if (dtMin < 0.001) dtMin = 0.001;
+  }
+  lastControlTime = millis();
 
+  // === PI 溫控 (#15) + 速率限制 (#2 #3) + 熱回灌 (#17) ===
   float coolDiff = nestT - coolTarget;  // +=太熱需製冷
   float heatDiff = heatTarget - nestT;  // +=太冷需加熱
 
   if (coolDiff > hysteresis) {
-    // 需製冷 — 偏差每多1°C 增加~12% PWM
-    float power = constrain(coolDiff / 5.0, 0.15, 1.0);
+    // 製冷模式 — PI 控制
+    heatIntegral = 0;  // 重置對向積分
+    coolIntegral += coolDiff * KI;
+    coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
+    float power = constrain(coolDiff / 5.0 + coolIntegral, 0.15, 1.0);
+
+    // #3 降溫速率限制
+    if (!isnan(prevNestT) && dtMin > 0) {
+      float rate = (nestT - prevNestT) / dtMin;  // 負值=降溫
+      if (rate < 0 && -rate > maxCoolRate) {
+        power *= maxCoolRate / (-rate);
+      }
+    }
+
     setTecPwm(power, true);
     if (!fanManual) setFan(100 + (int)(155 * power));
   } else if (heatDiff > hysteresis) {
-    // 需加熱 — 偏差每多1°C 增加~12% PWM
-    float power = constrain(heatDiff / 5.0, 0.15, 1.0);
+    // 加熱模式 — PI 控制
+    coolIntegral = 0;
+    heatIntegral += heatDiff * KI;
+    heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
+    float power = constrain(heatDiff / 5.0 + heatIntegral, 0.15, 1.0);
+
+    // #2 甦醒速率限制 (max 1.0°C/min)
+    if (!isnan(prevNestT) && dtMin > 0) {
+      float rate = (nestT - prevNestT) / dtMin;
+      if (rate > maxHeatRate) {
+        power *= maxHeatRate / rate;
+      }
+    }
+
     setTecPwm(power, false);
     if (!fanManual) setFan(80 + (int)(175 * power));
   } else {
-    // 在目標範圍內 → 關 TEC，低風扇循環
+    // 在目標範圍內 → 關 TEC，延遲降風扇防熱回灌 (#17)
+    if (cooling || heating) fanAfterRunTimer = millis();
     setTecPwm(0, true);
-    if (!fanManual) setFan(40);
+    if (!fanManual) {
+      if (fanAfterRunTimer > 0 && millis() - fanAfterRunTimer < (unsigned long)FAN_AFTERRUN_MS) {
+        setFan(FAN_AFTERRUN_SPEED);
+      } else {
+        fanAfterRunTimer = 0;
+        setFan(40);
+      }
+    }
   }
+  prevNestT = nestT;
 }
 
 void readSensor() {
@@ -162,14 +229,29 @@ void readSensor() {
   readTemps[1] = roomOK ? dt.getTempC(roomAddr) : DEVICE_DISCONNECTED_F;
   readTemps[2] = ventOK ? dt.getTempC(ventAddr) : DEVICE_DISCONNECTED_F;
 
+  // #16 校準偏移 + #18 指數移動平均濾波
+  float raw[3];
+  float* filtPtrs[3] = {&nestFilt, &roomFilt, &ventFilt};
+  float* outPtrs[3] = {&nestT, &roomT, &ventT};
+  float offs[3] = {nestOffset, roomOffset, ventOffset};
   for (int i = 0; i < 3; i++) {
-    if (readTemps[i] == DEVICE_DISCONNECTED_F || isnan(readTemps[i])) {
+    raw[i] = readTemps[i];
+    if (raw[i] == DEVICE_DISCONNECTED_F || isnan(raw[i])) {
+      raw[i] = NAN;
       readTemps[i] = NAN;
+      *(filtPtrs[i]) = NAN;   // 斷線重置濾波器
+      *(outPtrs[i]) = NAN;
+    } else {
+      raw[i] += offs[i];  // 校準偏移
+      if (isnan(*(filtPtrs[i]))) {
+        *(filtPtrs[i]) = raw[i];  // 初始值
+      } else {
+        *(filtPtrs[i]) = EMA_ALPHA * raw[i] + (1 - EMA_ALPHA) * (*(filtPtrs[i]));
+      }
+      *(outPtrs[i]) = *(filtPtrs[i]);
+      readTemps[i] = raw[i];  // /data 顯示原始+偏移值（未濾波給診斷參考）
     }
   }
-  nestT = readTemps[0];
-  roomT = readTemps[1];
-  ventT = readTemps[2];
 
   if (isnan(nestT)) {
     Serial.println("[DS18B20] 巢穴感測器斷線");
@@ -202,9 +284,15 @@ void handleData() {
 }
 
 void handleControl() {
+  if (server.method() != HTTP_POST) {
+    server.send(405, "text/plain", "Method Not Allowed");
+    return;
+  }
+  bool changed = false;
   if (server.hasArg("system")) {
     systemOn = server.arg("system").toInt() == 1;
     if (systemOn) startAll(); else stopAll();
+    changed = true;
   }
   if (server.hasArg("manual")) {
     manualMode = server.arg("manual").toInt() == 1;
@@ -214,21 +302,74 @@ void handleControl() {
   }
   if (server.hasArg("coolTarget")) {
     coolTarget = constrain(server.arg("coolTarget").toFloat(), (float)10, (float)35);
+    changed = true;
   }
   if (server.hasArg("heatTarget")) {
     heatTarget = constrain(server.arg("heatTarget").toFloat(), (float)15, (float)40);
+    changed = true;
   }
   if (server.hasArg("safeMin")) {
     safeMin = constrain(server.arg("safeMin").toFloat(), 0, 20);
+    changed = true;
   }
   if (server.hasArg("safeMax")) {
     safeMax = constrain(server.arg("safeMax").toFloat(), 20, 50);
+    changed = true;
   }
   if (server.hasArg("ventMax")) {
     ventMax = constrain(server.arg("ventMax").toFloat(), 30, 80);
+    changed = true;
   }
+  if (server.hasArg("nestOff")) {
+    nestOffset = constrain(server.arg("nestOff").toFloat(), -5, 5);
+    changed = true;
+  }
+  if (server.hasArg("roomOff")) {
+    roomOffset = constrain(server.arg("roomOff").toFloat(), -5, 5);
+    changed = true;
+  }
+  if (server.hasArg("ventOff")) {
+    ventOffset = constrain(server.arg("ventOff").toFloat(), -5, 5);
+    changed = true;
+  }
+  if (changed) saveState();
   controlTemp();
   server.send(200, "text/plain", "OK");
+}
+
+// #31 斷電恢復：保存/讀取系統狀態到 EEPROM
+void saveState() {
+  EEPROM.write(0, 0xAA);           // valid flag
+  EEPROM.write(1, systemOn ? 1 : 0);
+  EEPROM.put(2, coolTarget);
+  EEPROM.put(6, heatTarget);
+  EEPROM.put(10, safeMin);
+  EEPROM.put(14, safeMax);
+  EEPROM.put(18, ventMax);
+  EEPROM.put(22, nestOffset);
+  EEPROM.put(26, roomOffset);
+  EEPROM.put(30, ventOffset);
+  EEPROM.commit();
+  Serial.println("[EEPROM] 狀態已保存");
+}
+
+void loadState() {
+  if (EEPROM.read(0) != 0xAA) {
+    Serial.println("[EEPROM] 無有效狀態，使用預設值");
+    return;
+  }
+  systemOn = EEPROM.read(1) == 1;
+  EEPROM.get(2, coolTarget);
+  EEPROM.get(6, heatTarget);
+  EEPROM.get(10, safeMin);
+  EEPROM.get(14, safeMax);
+  EEPROM.get(18, ventMax);
+  EEPROM.get(22, nestOffset);
+  EEPROM.get(26, roomOffset);
+  EEPROM.get(30, ventOffset);
+  if (systemOn) startAll();
+  Serial.printf("[EEPROM] 已恢復: sys=%d cool=%.1f heat=%.1f safe=[%.0f-%.0f] ventMax=%.0f\n",
+    systemOn, coolTarget, heatTarget, safeMin, safeMax, ventMax);
 }
 
 void handleDiag() {
@@ -399,7 +540,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=120,allData=[],ms=2000,pi=null,fm=false,chartMode=0;
+var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,chartMode=0,ALLDATA_MAX=10000;
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -434,8 +575,10 @@ rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
   if(!allData.length){toast('無資料');return;}
-  var c='﻿時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
-  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(new Date().toISOString().slice(0,19).replace('T','_').replace(/:/g,'-'))+'.csv';a.click();
+  var now=new Date(),ds=now.toISOString().slice(0,19).replace('T',' ').replace(/:/g,'-');
+  var meta='# TEC 蟄眠實驗\n# 導出時間: '+now.toLocaleString()+'\n';
+  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='TEC_'+(now.toISOString().slice(0,19).replace('T','_').replace(/:/g,'-'))+'.csv';a.click();
   toast('已導出 '+allData.length+' 筆');
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
@@ -478,14 +621,15 @@ async function doPoll(){
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
+    if(allData.length>ALLDATA_MAX)allData.shift();
     dC();
   }catch(e){
     document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
   }
 }
-function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0));}
-function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m).then(function(){doPoll();});}
+function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0),{method:'POST'});}
+function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'}).then(function(){doPoll();});}
 function setCT(v){
   v=parseFloat(v);
   if(isNaN(v))return;
@@ -493,7 +637,7 @@ function setCT(v){
   document.getElementById('ctV').value=v.toFixed(1);
   document.getElementById('ct').value=v;
   document.getElementById('nct').textContent=v.toFixed(1);
-  fetch('/control?coolTarget='+v);
+  fetch('/control?coolTarget='+v,{method:'POST'});
 }
 function setHT(v){
   v=parseFloat(v);
@@ -502,11 +646,11 @@ function setHT(v){
   document.getElementById('htV').value=v.toFixed(1);
   document.getElementById('ht').value=v;
   document.getElementById('nht').textContent=v.toFixed(1);
-  fetch('/control?heatTarget='+v);
+  fetch('/control?heatTarget='+v,{method:'POST'});
 }
-function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v);}
-function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v);}
-function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);fetch('/control?ventMax='+v);}
+function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v,{method:'POST'});}
+function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v,{method:'POST'});}
+function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);fetch('/control?ventMax='+v,{method:'POST'});}
 function setFanM(v){fm=true;document.getElementById('fanV').textContent=v+'%';fetch('/test?fan='+Math.round(v*255/100));setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
   try{var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';await fetch(url);}catch(e){}
@@ -602,7 +746,7 @@ void doScan() {
   if (cnt > 0) {
     dsOk = true;
     dt.setWaitForConversion(false);
-    dt.setResolution(11);
+    dt.setResolution(12);
     nestOK = false; roomOK = false; ventOK = false;
     DeviceAddress addr;
     for (int i = 0; i < cnt && i < 3; i++) {
@@ -641,15 +785,30 @@ void doScan() {
 void setup() {
   Serial.begin(115200); delay(500);
   Serial.printf("\n========== TEC 蟄眠溫控 ==========\n%s %s\n", __DATE__, __TIME__);
+
+  // #9 日誌：紀錄重置原因
+  esp_reset_reason_t reason = esp_reset_reason();
+  const char* reasons[] = {"上電","外部引腳","軟體","異常崩潰","中斷看門狗","任務看門狗","其他看門狗","深度睡眠喚醒","電壓不足","SDIO"};
+  int ri = (int)reason;
+  Serial.printf("[BOOT] 重置原因: %s (reason=%d)\n", (ri >= 0 && ri < 10) ? reasons[ri] : "未知", reason);
+
+  // #22 看門狗：3 秒超時自動重啟
+  esp_task_wdt_init(3, true);
+  esp_task_wdt_add(NULL);
+
   Serial.printf("GPIO%d, 3× DS18B20: 巢穴/活動/出風\n", DS18B20_PIN);
 
   pinMode(TEC_EN, OUTPUT); digitalWrite(TEC_EN, LOW);
   ledcSetup(FAN_CH, PWM_FREQ, PWM_RES); ledcAttachPin(FAN_PIN, FAN_CH);
-  ledcSetup(TEC_L_CH, PWM_FREQ, PWM_RES); ledcAttachPin(TEC_LPWM, TEC_L_CH);
-  ledcSetup(TEC_R_CH, PWM_FREQ, PWM_RES); ledcAttachPin(TEC_RPWM, TEC_R_CH);
+  ledcSetup(TEC_L_CH, PWM_FREQ, TEC_PWM_RES); ledcAttachPin(TEC_LPWM, TEC_L_CH);
+  ledcSetup(TEC_R_CH, PWM_FREQ, TEC_PWM_RES); ledcAttachPin(TEC_RPWM, TEC_R_CH);
   setFan(0); setTec(0, 0);
 
   doScan();
+
+  // #31 斷電恢復：從 EEPROM 讀取上次狀態
+  EEPROM.begin(64);
+  loadState();
 
   u8g2.begin();
   u8g2.setContrast(128);
@@ -661,7 +820,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/data", handleData);
   server.on("/diag", handleDiag);
-  server.on("/control", handleControl);
+  server.on("/control", HTTP_POST, handleControl);
   server.on("/test", handleTest);
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
@@ -669,6 +828,7 @@ void setup() {
 }
 
 void loop() {
+  esp_task_wdt_reset();  // 餵狗
   server.handleClient();
   if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
