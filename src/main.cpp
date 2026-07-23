@@ -110,7 +110,7 @@ void startAll() {
 void emergencyStop() {
   systemOn = false;
   stopAll();
-  Serial.println("!!! [緊急] 出風口溫度過高，系統關閉 !!!");
+  Serial.println("!!! [緊急] 系統關閉 !!!");
 }
 
 void setTecPwm(float power, bool isCool) {
@@ -804,6 +804,9 @@ void setup() {
 void loop() {
   esp_task_wdt_reset();  // 餵狗
   server.handleClient();
+
+  // 感測器斷線保護（獨立於 readSensor，後者在 !dsOk 時不執行）
+  if (systemOn && (isnan(nestT) || isnan(ventT) || !dsOk)) { emergencyStop(); saveState(); }
 
   // #17 風扇延遲（系統關閉後吹散 TEC 餘熱）
   if (!systemOn && fanAfterRunTimer > 0 && !fanManual) {
