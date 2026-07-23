@@ -55,7 +55,7 @@ float safeMax = 35.0;     // 巢穴最高溫（動物安全）
 float ventMax = 50.0;     // 出風口最高溫（硬體保護）
 
 // #18 溫度濾波 (指數移動平均)
-#define EMA_ALPHA 0.3f
+#define EMA_ALPHA 0.5f
 float nestFilt = NAN, roomFilt = NAN, ventFilt = NAN;
 
 // #15 PI 控制項
@@ -178,8 +178,8 @@ void controlTemp() {
     coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
     float power = constrain(coolDiff / 5.0 + coolIntegral, 0.15, 1.0);
 
-    // #3 降溫速率限制
-    if (!isnan(prevNestT) && dtMin > 0) {
+    // #3 降溫速率限制 (溫差大於3°C才啟動，小溫差不需要限速)
+    if (coolDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
       float rate = (nestT - prevNestT) / dtMin;  // 負值=降溫
       if (rate < 0 && -rate > maxCoolRate) {
         power *= maxCoolRate / (-rate);
@@ -195,8 +195,8 @@ void controlTemp() {
     heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
     float power = constrain(heatDiff / 5.0 + heatIntegral, 0.15, 1.0);
 
-    // #2 甦醒速率限制 (max 1.0°C/min)
-    if (!isnan(prevNestT) && dtMin > 0) {
+    // #2 甦醒速率限制 (溫差大於3°C才啟動)
+    if (heatDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
       float rate = (nestT - prevNestT) / dtMin;
       if (rate > maxHeatRate) {
         power *= maxHeatRate / rate;
