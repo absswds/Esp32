@@ -206,7 +206,8 @@ void readSensor() {
   float offs[3] = {nestOffset, roomOffset, ventOffset};
   for (int i = 0; i < 3; i++) {
     raw[i] = readTemps[i];
-    if (raw[i] == DEVICE_DISCONNECTED_F || isnan(raw[i])) {
+    // 斷線 + 範圍檢查：DS18B20 合理範圍 -55~+85°C，超出即垃圾值
+    if (raw[i] == DEVICE_DISCONNECTED_F || isnan(raw[i]) || raw[i] < -55.0 || raw[i] > 85.0) {
       raw[i] = NAN;
       readTemps[i] = NAN;
       *(filtPtrs[i]) = NAN;   // 斷線重置濾波器
