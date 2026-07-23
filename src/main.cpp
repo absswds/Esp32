@@ -136,11 +136,11 @@ void controlTemp() {
   // === 保護 0：感測器斷線 → 緊急斷電（#7）===
   // 巢穴斷線：無法量測就無法控制，保持最後狀態可能過熱/過冷
   // 出風口斷線：過熱保護失效，風險不可接受
-  if (isnan(nestT) || isnan(ventT)) {
+  if (isnan(nestT) || isnan(roomT) || isnan(ventT)) {
     emergencyStop();
     saveState();
-    Serial.printf("[SAFE] 感測器斷線 巢穴=%s 出風口=%s → 緊急關閉\n",
-                  isnan(nestT) ? "X" : "OK", isnan(ventT) ? "X" : "OK");
+    Serial.printf("[SAFE] 感測器斷線 巢穴=%s 活動=%s 出風=%s → 緊急關閉\n",
+                  isnan(nestT) ? "X" : "OK", isnan(roomT) ? "X" : "OK", isnan(ventT) ? "X" : "OK");
     return;
   }
 
@@ -809,7 +809,7 @@ void loop() {
 
   // 感測器斷線保護（獨立於 readSensor，後者在 !dsOk 時不執行）
   // sensorInit 確保首次讀取完成前不誤觸（nestT 初始值為 NAN）
-  if (systemOn && (!dsOk || (sensorInit && (isnan(nestT) || isnan(ventT))))) { emergencyStop(); saveState(); }
+  if (systemOn && (!dsOk || (sensorInit && (isnan(nestT) || isnan(roomT) || isnan(ventT))))) { emergencyStop(); saveState(); }
 
   // #17 風扇延遲（系統關閉後吹散 TEC 餘熱）
   if (!systemOn && fanAfterRunTimer > 0 && !fanManual) {
