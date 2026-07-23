@@ -173,9 +173,9 @@ void controlTemp() {
   float heatDiff = heatTarget - nestT;  // +=太冷需加熱
 
   if (coolDiff >= hysteresis) {
-    // 製冷模式 — PI 控制
+    // 製冷模式 — PI 控制（僅在小偏差時累積積分，防止長程 windup）
     heatIntegral = 0;  // 重置對向積分
-    coolIntegral += coolDiff * KI;
+    if (coolDiff < 2.0) coolIntegral += coolDiff * KI;
     coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
     float power = constrain(coolDiff / 5.0 + coolIntegral, 0.15, 1.0);
 
@@ -190,9 +190,9 @@ void controlTemp() {
     setTecPwm(power, true);
     if (!fanManual) setFan(100 + (int)(155 * power));
   } else if (heatDiff >= hysteresis) {
-    // 加熱模式 — PI 控制
+    // 加熱模式 — PI 控制（僅在小偏差時累積積分）
     coolIntegral = 0;
-    heatIntegral += heatDiff * KI;
+    if (heatDiff < 2.0) heatIntegral += heatDiff * KI;
     heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
     float power = constrain(heatDiff / 5.0 + heatIntegral, 0.15, 1.0);
 
@@ -594,7 +594,7 @@ function exportCSV(){
   function pad(n){return String(n).padStart(2,'0');}
   var fn='TEC_'+now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'_'+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds())+'.csv';
   var meta='# TEC 蟄眠實驗\n# 導出時間: '+ds+'\n';
-  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(1)+','+r.r.toFixed(1)+','+r.v.toFixed(1)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
+  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(2)+','+r.r.toFixed(2)+','+r.v.toFixed(2)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
@@ -605,9 +605,9 @@ async function doPoll(){
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
-    document.getElementById('mNest').textContent=d.nest.toFixed(1);
-    document.getElementById('mRoom').textContent=d.room.toFixed(1);
-    document.getElementById('mVent').textContent=d.vent.toFixed(1);
+    document.getElementById('mNest').textContent=d.nest.toFixed(2);
+    document.getElementById('mRoom').textContent=d.room.toFixed(2);
+    document.getElementById('mVent').textContent=d.vent.toFixed(2);
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
     document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
     var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'維持中'):'待機';
