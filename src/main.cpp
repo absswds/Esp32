@@ -319,7 +319,7 @@ void handleControl() {
     changed = true;
   }
   if (server.hasArg("hysteresis")) {
-    hysteresis = constrain(server.arg("hysteresis").toFloat(), (float)0.1, (float)3.0);
+    hysteresis = constrain(server.arg("hysteresis").toFloat(), (float)0.01, (float)3.0);
     changed = true;
   }
   if (server.hasArg("safeMin")) {
@@ -512,8 +512,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   </div>
   <div class="fld">
     <label>維持範圍</label>
-    <input type="range" min="0.1" max="3" step="0.1" value="0.5" id="hyst" oninput="setHYST(this.value)">
-    <input type="number" class="rv" id="hystV" value="0.5" step="0.1" min="0.1" max="3" onchange="setHYST(this.value)">
+    <input type="range" min="0.01" max="3" step="0.01" value="0.5" id="hyst" oninput="setHYST(this.value)">
+    <input type="number" class="rv" id="hystV" value="0.5" step="0.01" min="0.01" max="3" onchange="setHYST(this.value)">
   </div>
   <div class="info">巢穴 ＞<span id="nct">28.5</span>°C 製冷 | ＜<span id="nht">27.5</span>°C 加熱 | 中間不動作</div>
 </div>
@@ -554,7 +554,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,chartMode=0,ALLDATA_MAX=10000;
+var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000;
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -615,12 +615,14 @@ async function doPoll(){
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
     _cooling=d.cooling;_heating=d.heating;
-    document.getElementById('tgt').value=d.targetTemp;
-    document.getElementById('tgtV').value=d.targetTemp.toFixed(1);
-    document.getElementById('hyst').value=d.hysteresis;
-    document.getElementById('hystV').value=d.hysteresis.toFixed(2);
-    document.getElementById('nct').textContent=(d.targetTemp+d.hysteresis).toFixed(1);
-    document.getElementById('nht').textContent=(d.targetTemp-d.hysteresis).toFixed(1);
+    if(!ue){
+      document.getElementById('tgt').value=d.targetTemp;
+      document.getElementById('tgtV').value=d.targetTemp.toFixed(1);
+      document.getElementById('hyst').value=d.hysteresis;
+      document.getElementById('hystV').value=d.hysteresis.toFixed(2);
+    }
+    document.getElementById('nct').textContent=(d.targetTemp+d.hysteresis).toFixed(2);
+    document.getElementById('nht').textContent=(d.targetTemp-d.hysteresis).toFixed(2);
     document.getElementById('smin').value=d.safeMin;
     document.getElementById('sminV').textContent=d.safeMin.toFixed(1);
     document.getElementById('smax').value=d.safeMax;
@@ -649,17 +651,19 @@ function toggleMode(){var m=document.getElementById('modeBtn').textContent.index
 function setTGT(v){
   v=parseFloat(v);
   if(isNaN(v))return;
-  v=Math.round(v*10)/10;
+  v=Math.round(v*100)/100;
   document.getElementById('tgtV').value=v.toFixed(1);
   document.getElementById('tgt').value=v;
+  ue=true;setTimeout(function(){ue=false;},3000);
   fetch('/control?targetTemp='+v,{method:'POST'});
 }
 function setHYST(v){
   v=parseFloat(v);
   if(isNaN(v))return;
-  v=Math.round(v*10)/10;
-  document.getElementById('hystV').value=v.toFixed(1);
+  v=Math.round(v*100)/100;
+  document.getElementById('hystV').value=v.toFixed(2);
   document.getElementById('hyst').value=v;
+  ue=true;setTimeout(function(){ue=false;},3000);
   fetch('/control?hysteresis='+v,{method:'POST'});
 }
 function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v,{method:'POST'});}
