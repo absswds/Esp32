@@ -60,7 +60,7 @@ float nestFilt = NAN, roomFilt = NAN, ventFilt = NAN;
 
 // #15 PI 控制項
 float coolIntegral = 0, heatIntegral = 0;
-const float KI = 0.015f;     // 積分增益 (小值，慢速消除穩態誤差)
+const float KI = 0.05f;      // 積分增益 (加快功率爬升)
 const float KI_MAX = 0.5f;   // anti-windup 上限
 
 // #2 #3 速率限制 (°C/min)
