@@ -58,17 +58,6 @@ float ventMax = 50.0;     // 出風口最高溫（硬體保護）
 #define EMA_ALPHA 0.5f
 float nestFilt = NAN, roomFilt = NAN, ventFilt = NAN;
 
-// #15 PI 控制項
-float coolIntegral = 0, heatIntegral = 0;
-const float KI = 0.05f;      // 積分增益 (加快功率爬升)
-const float KI_MAX = 0.5f;   // anti-windup 上限
-
-// #2 #3 速率限制 (°C/min)
-const float maxHeatRate = 1.0f;   // 甦醒速率上限 (論文 0.7-1.0)
-const float maxCoolRate = 0.5f;   // 降溫速率上限
-float prevNestT = NAN;
-unsigned long lastControlTime = 0;
-
 // #17 風扇延遲 (熱回灌)
 unsigned long fanAfterRunTimer = 0;
 const int FAN_AFTERRUN_MS = 10000;   // 關 TEC 後保持高風扇 10 秒
@@ -159,56 +148,14 @@ void controlTemp() {
     return;
   }
 
-  // === 速率計算 (#2 #3) ===
-  float dtMin = 0;
-  if (lastControlTime > 0) {
-    dtMin = (millis() - lastControlTime) / 60000.0;
-    if (dtMin < 0.001) dtMin = 0.001;
-  }
-  lastControlTime = millis();
-
-  // === PI 溫控 (#15) + 速率限制 (#2 #3) + 熱回灌 (#17) ===
-  float coolDiff = nestT - (targetTemp + hysteresis);  // 超過目標+滯回才製冷
-  float heatDiff = (targetTemp - hysteresis) - nestT;  // 低於目標-滯回才加熱
-
+  // === 製冷/加熱/維持 ===
   if (nestT > targetTemp + hysteresis) {
-    // 製冷模式 — PI 控制（僅在小偏差時累積積分，防止長程 windup）
-    heatIntegral = 0;  // 重置對向積分
-    if (coolDiff < 2.0) coolIntegral += coolDiff * KI;
-    coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
-    float power = constrain(coolDiff / 2.5 + coolIntegral, 0.40, 1.0);
-
-    // #3 降溫速率限制 (溫差大於3°C才啟動，小溫差不需要限速)
-    if (coolDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
-      float rate = (nestT - prevNestT) / dtMin;  // 負值=降溫
-      if (rate < 0 && -rate > maxCoolRate) {
-        power *= maxCoolRate / (-rate);
-      }
-    }
-
-    setTecPwm(power, true);
-    if (!fanManual) setFan(100 + (int)(155 * power));
+    setTecPwm(1.0, true);
+    if (!fanManual) setFan(255);
   } else if (nestT < targetTemp - hysteresis) {
-    // 加熱模式 — PI 控制（僅在小偏差時累積積分）
-    coolIntegral = 0;
-    if (heatDiff < 2.0) heatIntegral += heatDiff * KI;
-    heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
-    float power = constrain(heatDiff / 2.5 + heatIntegral, 0.40, 1.0);
-
-    // #2 甦醒速率限制 (溫差大於3°C才啟動)
-    if (heatDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
-      float rate = (nestT - prevNestT) / dtMin;
-      if (rate > maxHeatRate) {
-        power *= maxHeatRate / rate;
-      }
-    }
-
-    setTecPwm(power, false);
-    if (!fanManual) setFan(80 + (int)(175 * power));
+    setTecPwm(1.0, false);
+    if (!fanManual) setFan(255);
   } else {
-    // 在目標範圍內 → 關 TEC，PI 積分衰退 (#15)
-    coolIntegral *= 0.95;
-    heatIntegral *= 0.95;
     // #17 風扇延遲防熱回灌
     if (cooling || heating) {
       fanAfterRunTimer = millis();
@@ -225,7 +172,6 @@ void controlTemp() {
       }
     }
   }
-  prevNestT = nestT;
 }
 
 void readSensor() {
