@@ -78,6 +78,10 @@ const int FAN_AFTERRUN_SPEED = 200;  // ~78%
 // #16 感測器校準偏移
 float nestOffset = 0, roomOffset = 0, ventOffset = 0;
 
+// 前置宣告
+void saveState();
+void loadState();
+
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
   ledcWrite(FAN_CH, fanSpeed);
