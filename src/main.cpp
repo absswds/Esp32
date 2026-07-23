@@ -99,12 +99,14 @@ void setTec(int cool, int heat) {
 }
 
 void stopAll() {
-  setFan(0);
+  // 先關 TEC（安全第一），風扇延遲降速（#17 熱回灌）
   setTec(0, 0);
   digitalWrite(TEC_EN, LOW);
+  fanAfterRunTimer = fanSpeed > 0 ? millis() : 0;
   fanManual = false;
   tecManual = false;
-  Serial.println("[SYS] 停止");
+  systemOn = false;
+  Serial.println("[SYS] 停止，風扇延遲中");
 }
 
 void startAll() {
@@ -112,6 +114,8 @@ void startAll() {
   setFan(100);
   fanManual = false;
   tecManual = false;
+  fanAfterRunTimer = 0;  // 取消可能進行中的風扇延遲
+  systemOn = true;
   Serial.println("[SYS] 啟動");
 }
 
@@ -840,6 +844,18 @@ void setup() {
 void loop() {
   esp_task_wdt_reset();  // 餵狗
   server.handleClient();
+
+  // #17 風扇延遲（系統關閉後吹散 TEC 餘熱）
+  if (!systemOn && fanAfterRunTimer > 0 && !fanManual) {
+    if (millis() - fanAfterRunTimer < (unsigned long)FAN_AFTERRUN_MS) {
+      setFan(FAN_AFTERRUN_SPEED);
+    } else {
+      fanAfterRunTimer = 0;
+      setFan(0);
+      Serial.println("[FAN] 熱回灌結束，風扇關閉");
+    }
+  }
+
   if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
