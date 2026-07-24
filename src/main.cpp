@@ -260,12 +260,17 @@ void sendJson(const char* msg) {
 
 void handleData() {
   if (!dsOk) { sendJson("DS18B20 未連線"); return; }
-  if (isnan(nestT)) { sendJson("等待感測資料..."); return; }
   int n = (nestOK ? 1 : 0) + (roomOK ? 1 : 0) + (ventOK ? 1 : 0);
+  const float tArr[3] = {nestT, roomT, ventT};
+  char tBuf[3][8];
+  for (int i = 0; i < 3; i++) {
+    if (isnan(tArr[i])) strcpy(tBuf[i], "null");
+    else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
+  }
   char buf[700];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%.2f,\"room\":%.2f,\"vent\":%.2f,\"temps\":[%.2f,%.2f,%.2f],\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
-    nestT, roomT, ventT, readTemps[0], readTemps[1], readTemps[2], n,
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    tBuf[0], tBuf[1], tBuf[2], n,
     fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
@@ -539,7 +544,8 @@ function dC(){
   var f=chartFields[chartMode],cl=chartColors[chartMode],lb=chartLabels[chartMode];
   cx.clearRect(0,0,W,HH);
   if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待 '+lb+' 資料...',W/2,HH/2);return;}
-  var mn=1e9,mx=-1e9;H.forEach(function(r){var v=r[f];if(v<mn)mn=v;if(v>mx)mx=v;});
+  var mn=1e9,mx=-1e9;H.forEach(function(r){var v=r[f];if(v!=null&&v<mn)mn=v;if(v!=null&&v>mx)mx=v;});
+  if(mn>=mx){mn-=1;mx+=1;}
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
   var pw=W-pl-pr,ph=HH-pt-pb;
@@ -549,14 +555,26 @@ function dC(){
   var st=pw/Math.max(1,H.length-1),xt=Math.max(1,Math.ceil(H.length/5));
   H.forEach(function(r,i){if(i%xt===0||i===H.length-1)cx.fillText(r.ti,pl+st*i,HH-pb+12);});
   var gd=cx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,cl[1]+'.2)');gd.addColorStop(1,cl[1]+'0)');
-  cx.beginPath();H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r[f]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});
-  cx.lineTo(pl+st*(H.length-1),HH-pb);cx.lineTo(pl,HH-pb);cx.closePath();cx.fillStyle=gd;cx.fill();
+  cx.beginPath();var drawing=false;H.forEach(function(r,i){
+    var x=pl+st*i,v=r[f];
+    if(v==null){drawing=false;return;}
+    var y=pt+(1-(v-mn)/sp)*ph;
+    if(!drawing){cx.moveTo(x,y);drawing=true;}else cx.lineTo(x,y);
+  });cx.lineTo(pl+st*(H.length-1),HH-pb);cx.lineTo(pl,HH-pb);cx.closePath();cx.fillStyle=gd;cx.fill();
   cx.beginPath();cx.strokeStyle=cl[0];cx.lineWidth=2;cx.lineJoin='round';
-  H.forEach(function(r,i){var x=pl+st*i,y=pt+(1-(r[f]-mn)/sp)*ph;i?cx.lineTo(x,y):cx.moveTo(x,y);});cx.stroke();
-  var la=H[H.length-1],lx=pl+st*(H.length-1),ly=pt+(1-(la[f]-mn)/sp)*ph;
-  cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle=cl[0];cx.fill();
-  cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle=cl[1]+'.3)';cx.lineWidth=2;cx.stroke();
-  cx.fillStyle=cl[0];cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(la[f].toFixed(1)+'C',lx-10,ly-8);
+  drawing=false;H.forEach(function(r,i){
+    var x=pl+st*i,v=r[f];
+    if(v==null){drawing=false;return;}
+    var y=pt+(1-(v-mn)/sp)*ph;
+    if(!drawing){cx.moveTo(x,y);drawing=true;}else cx.lineTo(x,y);
+  });cx.stroke();
+  var la=H[H.length-1],laV=la[f];
+  if(laV!=null){
+    var lx=pl+st*(H.length-1),ly=pt+(1-(laV-mn)/sp)*ph;
+    cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle=cl[0];cx.fill();
+    cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle=cl[1]+'.3)';cx.lineWidth=2;cx.stroke();
+    cx.fillStyle=cl[0];cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(laV.toFixed(1)+'C',lx-10,ly-8);
+  }
 }
 rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
@@ -566,7 +584,7 @@ function exportCSV(){
   function pad(n){return String(n).padStart(2,'0');}
   var fn='TEC_'+now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'_'+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds())+'.csv';
   var meta='# TEC 蟄眠實驗\n# 導出時間: '+ds+'\n';
-  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+r.n.toFixed(2)+','+r.r.toFixed(2)+','+r.v.toFixed(2)+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
+  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+(r.n==null?'':r.n.toFixed(2))+','+(r.r==null?'':r.r.toFixed(2))+','+(r.v==null?'':r.v.toFixed(2))+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
@@ -577,9 +595,9 @@ async function doPoll(){
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
-    document.getElementById('mNest').textContent=d.nest.toFixed(2);
-    document.getElementById('mRoom').textContent=d.room.toFixed(2);
-    document.getElementById('mVent').textContent=d.vent.toFixed(2);
+    document.getElementById('mNest').textContent=d.nest==null?'---':d.nest.toFixed(2);
+    document.getElementById('mRoom').textContent=d.room==null?'---':d.room.toFixed(2);
+    document.getElementById('mVent').textContent=d.vent==null?'---':d.vent.toFixed(2);
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
     document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
     var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'維持中'):'待機';
