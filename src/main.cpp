@@ -845,6 +845,7 @@ void setup() {
   Serial.println("[OLED] 就緒");
 
   WiFi.softAP("ESP32-TEMP", "12345678");
+  WiFi.softAPsetSoftAPChannel(1);  // fixed channel for stability
   Serial.printf("[WiFi] %s\n", WiFi.softAPIP().toString().c_str());
 
   server.on("/", handleRoot);

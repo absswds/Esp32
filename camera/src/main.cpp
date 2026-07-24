@@ -159,13 +159,14 @@ void setup() {
     Serial.println("[STREAM] Client disconnected");
   });
 
-  // IR + LED control
+  // IR + LED control (CORS headers for cross-origin from dashboard)
   pinMode(PIN_IR, OUTPUT);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_IR, LOW);
   digitalWrite(PIN_LED, LOW);
 
   server.on("/light", HTTP_GET, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     if (server.hasArg("ir"))   digitalWrite(PIN_IR,   server.arg("ir").toInt() ? HIGH : LOW);
     if (server.hasArg("led"))  digitalWrite(PIN_LED,  server.arg("led").toInt() ? HIGH : LOW);
     String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
@@ -173,6 +174,7 @@ void setup() {
   });
 
   server.on("/status", HTTP_GET, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
     server.send(200, "application/json", json);
   });
