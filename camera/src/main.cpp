@@ -83,7 +83,7 @@ void setup() {
 
   // Sensor tuning
   sensor_t *s = esp_camera_sensor_get();
-  s->set_vflip(s, 0);
+  s->set_vflip(s, 1);
   s->set_hmirror(s, 0);
 
   // WiFi — join ESP32-TEMP AP
