@@ -104,6 +104,7 @@ void startAll() {
   setFan(100);
   fanManual = false;
   tecManual = false;
+  manualMode = false;    // 開啟系統時強制回自動模式
   fanAfterRunTimer = 0;  // 取消可能進行中的風扇延遲
   nanCount = 0;          // 重置斷線計數，提供恢復路徑
   systemOn = true;
@@ -618,7 +619,7 @@ async function doPoll(){
     document.getElementById('dot').className='dot err';
   }
 }
-function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0),{method:'POST'});}
+function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0),{method:'POST'}).then(function(){doPoll();});}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'}).then(function(){doPoll();});}
 function setTGT(v){
   v=parseFloat(v);
