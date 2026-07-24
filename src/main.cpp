@@ -309,7 +309,7 @@ void handleControl() {
     changed = true;
   }
   if (server.hasArg("ventMax")) {
-    ventMax = constrain(server.arg("ventMax").toFloat(), 30, 80);
+    ventMax = constrain(server.arg("ventMax").toFloat(), 40, 80);
     changed = true;
   }
   if (server.hasArg("nestOff")) {
@@ -356,6 +356,7 @@ void loadState() {
   EEPROM.get(10, safeMin);
   EEPROM.get(14, safeMax);
   EEPROM.get(18, ventMax);
+  ventMax = constrain(ventMax, 40.0f, 80.0f);
   EEPROM.get(22, nestOffset);
   EEPROM.get(26, roomOffset);
   EEPROM.get(30, ventOffset);
@@ -509,7 +510,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   </div>
   <div class="fld">
     <label>出風口上限</label>
-    <input type="range" min="30" max="80" step="1" value="50" id="vmax" oninput="setVMax(this.value)">
+    <input type="range" min="40" max="80" step="1" value="50" id="vmax" oninput="setVMax(this.value)">
     <span class="rv" id="vmaxV">50</span>
   </div>
   <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
