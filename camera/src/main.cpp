@@ -10,24 +10,24 @@
 const char* AP_SSID = "ESP32-TEMP";
 const char* AP_PASS = "12345678";
 
-// === DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1 pinout ===
-// If camera init fails,对照板子絲印调整这些引脚
+// === DFRobot DFR1154 ESP32-S3 AI Camera pinout (OV3660) ===
+// Source: https://github.com/DFRobot/DFR1154_Examples
 #define CAM_PIN_pwdn    -1
 #define CAM_PIN_reset   -1
-#define CAM_PIN_xclk    15
-#define CAM_PIN_sccb_sda  4
-#define CAM_PIN_sccb_scl  5
-#define CAM_PIN_d7      16
-#define CAM_PIN_d6      17
-#define CAM_PIN_d5      18
-#define CAM_PIN_d4      12
-#define CAM_PIN_d3      10
-#define CAM_PIN_d2       8
-#define CAM_PIN_d1       9
-#define CAM_PIN_d0      11
-#define CAM_PIN_vsync    6
-#define CAM_PIN_href     7
-#define CAM_PIN_pclk    13
+#define CAM_PIN_xclk     5
+#define CAM_PIN_sccb_sda  8
+#define CAM_PIN_sccb_scl  9
+#define CAM_PIN_d7       4   // Y9
+#define CAM_PIN_d6       6   // Y8
+#define CAM_PIN_d5       7   // Y7
+#define CAM_PIN_d4      14   // Y6
+#define CAM_PIN_d3      17   // Y5
+#define CAM_PIN_d2      21   // Y4
+#define CAM_PIN_d1      18   // Y3
+#define CAM_PIN_d0      16   // Y2
+#define CAM_PIN_vsync    1
+#define CAM_PIN_href     2
+#define CAM_PIN_pclk    15
 
 WebServer server(80);
 
