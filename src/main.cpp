@@ -477,7 +477,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 <div class="sec">
   <h2>即時影像</h2>
   <div class="cam-wrap">
-    <img id="camStream" src="/cam" alt="camera" onload="camPoll()" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
+    <img id="camStream" src="/cam" alt="camera" onload="camOk()" onerror="camErr()">
     <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
   </div>
   <div class="pills" style="margin-top:8px">
@@ -606,7 +606,11 @@ function exportCSV(){
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false;
-function camPoll(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';i.src='/cam?r='+Date.now();}
+var camBusy=false;
+function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,1500);}
+function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,3000);}
+function camPoll(){if(camBusy)return;camBusy=true;document.getElementById('camStream').src='/cam?r='+Date.now();}
+camPoll();
 function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
 function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
