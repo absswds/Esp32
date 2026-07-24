@@ -49,6 +49,7 @@ bool manualMode = false;
 bool convPending = false;
 unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
+int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防止瞬態雜訊誤觸）
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -104,6 +105,7 @@ void startAll() {
   fanManual = false;
   tecManual = false;
   fanAfterRunTimer = 0;  // 取消可能進行中的風扇延遲
+  nanCount = 0;          // 重置斷線計數，提供恢復路徑
   systemOn = true;
   Serial.println("[SYS] 啟動");
 }
@@ -135,13 +137,21 @@ void controlTemp() {
 
   // === 保護 0：感測器斷線 → 緊急斷電（#7）===
   // 巢穴斷線：無法量測就無法控制，保持最後狀態可能過熱/過冷
+  // 活動區斷線：雖不直接參與控制，但缺少環境參考溫度無法判斷系統是否正常運作
   // 出風口斷線：過熱保護失效，風險不可接受
   if (isnan(nestT) || isnan(roomT) || isnan(ventT)) {
-    emergencyStop();
-    saveState();
-    Serial.printf("[SAFE] 感測器斷線 巢穴=%s 活動=%s 出風=%s → 緊急關閉\n",
-                  isnan(nestT) ? "X" : "OK", isnan(roomT) ? "X" : "OK", isnan(ventT) ? "X" : "OK");
+    nanCount++;
+    Serial.printf("[SAFE] 感測器異常 count=%d/3 巢穴=%s 活動=%s 出風=%s\n",
+                  nanCount, isnan(nestT) ? "X" : "OK", isnan(roomT) ? "X" : "OK", isnan(ventT) ? "X" : "OK");
+    if (nanCount >= 3) {
+      emergencyStop();
+      saveState();
+      Serial.printf("[SAFE] 連續 %d 次異常 → 緊急關閉\n", nanCount);
+    }
     return;
+  } else if (nanCount > 0) {
+    Serial.printf("[SAFE] 感測器恢復正常，重置計數 (was %d)\n", nanCount);
+    nanCount = 0;
   }
 
   // === 保護 1：出風口過熱（硬體安全，最高優先級）===
@@ -159,12 +169,19 @@ void controlTemp() {
     return;
   }
 
+  // === 熱量節流：出風口趨近 ventMax 時降功率 ===
+  // ponytail: 固定起點 ventMax-10，若需可調再改 config
+  float throttle = 1.0;
+  if (ventT > ventMax - 10) {
+    throttle = constrain((ventMax - ventT) / 10.0, 0.0, 1.0);
+  }
+
   // === 製冷/加熱/維持 ===
   if (nestT > targetTemp + hysteresis) {
-    setTecPwm(1.0, true);
+    setTecPwm(throttle, true);
     if (!fanManual) setFan(255);
   } else if (nestT < targetTemp - hysteresis) {
-    setTecPwm(1.0, false);
+    setTecPwm(throttle, false);
     if (!fanManual) setFan(255);
   } else {
     // #17 風扇延遲防熱回灌
@@ -807,9 +824,8 @@ void loop() {
   esp_task_wdt_reset();  // 餵狗
   server.handleClient();
 
-  // 感測器斷線保護（獨立於 readSensor，後者在 !dsOk 時不執行）
-  // sensorInit 確保首次讀取完成前不誤觸（nestT 初始值為 NAN）
-  if (systemOn && (!dsOk || (sensorInit && (isnan(nestT) || isnan(roomT) || isnan(ventT))))) { emergencyStop(); saveState(); }
+  // 個別感測器 NAN 由 readSensor()→controlTemp() 內的連續計數器處理（nanCount >= 3 才緊急停止）
+  if (systemOn && sensorInit && nanCount >= 3) { emergencyStop(); saveState(); }
 
   // #17 風扇延遲（系統關閉後吹散 TEC 餘熱）
   if (!systemOn && fanAfterRunTimer > 0 && !fanManual) {
