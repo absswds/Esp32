@@ -1,5 +1,6 @@
 ﻿#include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <WebServer.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
@@ -476,7 +477,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 <div class="sec">
   <h2>即時影像</h2>
   <div class="cam-wrap">
-    <img id="camStream" src="http://192.168.4.2/capture" alt="camera" onload="camPoll()" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
+    <img id="camStream" src="/cam" alt="camera" onload="camPoll()" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
     <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
   </div>
   <div class="pills" style="margin-top:8px">
@@ -605,9 +606,9 @@ function exportCSV(){
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false;
-function camPoll(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';i.src='http://192.168.4.2/capture?r='+Date.now();}
-function toggleIR(){irOn=!irOn;fetch('http://192.168.4.2/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
-function toggleLED(){ledOn=!ledOn;fetch('http://192.168.4.2/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
+function camPoll(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';i.src='/cam?r='+Date.now();}
+function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
+function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
@@ -853,6 +854,49 @@ void setup() {
   server.on("/diag", handleDiag);
   server.on("/control", HTTP_POST, handleControl);
   server.on("/test", handleTest);
+
+  // Camera proxy — ESP32 SoftAP doesn't forward station-to-station traffic
+  server.on("/cam", []() {
+    WiFiClient c;
+    if (!c.connect("192.168.4.2", 80, 2000)) { server.send(502, "text/plain", "cam offline"); return; }
+    String path = server.hasArg("r") ? "/capture" : "/capture";
+    c.printf("GET %s HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n", path.c_str());
+    String headers;
+    uint32_t t = millis();
+    while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
+    while (c.available()) { String l = c.readStringUntil('\n'); headers += l; if (l == "\r") break; if (l.length() == 0) break; }
+    size_t cl = 0;
+    int ci = headers.indexOf("Content-Length:");
+    if (ci >= 0) cl = headers.substring(ci + 15).toInt();
+    if (cl == 0) { server.send(502, "text/plain", "cam no body"); c.stop(); return; }
+    uint8_t *buf = (uint8_t*)malloc(cl);
+    if (!buf) { server.send(502, "text/plain", "oom"); c.stop(); return; }
+    size_t got = 0;
+    t = millis();
+    while (got < cl && (c.connected() || c.available())) { int r = c.read(buf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 3000) break; }
+    c.stop();
+    if (got == cl) { server.send_P(200, "image/jpeg", (const char*)buf, cl); } else { server.send(502, "text/plain", "cam short"); }
+    free(buf);
+  });
+
+  server.on("/light", []() {
+    WiFiClient c;
+    if (!c.connect("192.168.4.2", 80, 2000)) { server.send(502, "application/json", "{\"err\":1}"); return; }
+    String q = "";
+    if (server.hasArg("ir"))  q += "ir=" + server.arg("ir");
+    if (server.hasArg("led")) { if (q.length()) q += "&"; q += "led=" + server.arg("led"); }
+    if (q.length()) q = "/light?" + q; else q = "/status";
+    c.printf("GET %s HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n", q.c_str());
+    String body;
+    uint32_t t = millis();
+    while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
+    while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
+    while (c.available()) body += (char)c.read();
+    c.stop();
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", body);
+  });
+
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("[Server] OK\n");
