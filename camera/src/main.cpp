@@ -1,4 +1,4 @@
-// ESP32-S3 AI Camera → MJPEG streamer
+// ESP32-S3 AI Camera → JPEG capture server (non-blocking, multi-client)
 // Connects to ESP32-TEMP WiFi AP, serves camera stream
 // Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
 
@@ -120,11 +120,13 @@ void setup() {
       "img{max-width:100%;border-radius:8px;border:2px solid #334155}"
       "h2{margin:10px 0}</style></head><body>"
       "<h2>ESP32-S3 AI Camera</h2>"
-      "<img src='/stream'></body></html>";
+      "<img id='cam' src='/capture' onload=\"setTimeout(function(){document.getElementById('cam').src='/capture?r='+Date.now()},300)\"></body></html>";
     server.send(200, "text/html", html);
   });
 
+  // Single-frame capture (non-blocking, supports multiple clients)
   server.on("/capture", HTTP_GET, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
       server.send(500, "text/plain", "Capture failed");
@@ -133,30 +135,6 @@ void setup() {
     server.sendHeader("Content-Disposition", "inline; filename=capture.jpg");
     server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
-  });
-
-  // MJPEG stream
-  server.on("/stream", HTTP_GET, []() {
-    WiFiClient client = server.client();
-    String response = "HTTP/1.1 200 OK\r\n"
-                      "Content-Type: multipart/x-mixed-replace;boundary=frame\r\n\r\n";
-    client.print(response);
-
-    while (client.connected()) {
-      camera_fb_t *fb = esp_camera_fb_get();
-      if (!fb) {
-        Serial.println("[STREAM] Frame grab failed");
-        break;
-      }
-      String header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + String(fb->len) + "\r\n\r\n";
-      client.print(header);
-      client.write(fb->buf, fb->len);
-      client.print("\r\n");
-      esp_camera_fb_return(fb);
-      yield();  // feed watchdog + allow other tasks
-      delay(30);  // ~30fps cap
-    }
-    Serial.println("[STREAM] Client disconnected");
   });
 
   // IR + LED control (CORS headers for cross-origin from dashboard)

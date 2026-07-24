@@ -476,7 +476,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 <div class="sec">
   <h2>即時影像</h2>
   <div class="cam-wrap">
-    <img id="camStream" src="http://192.168.4.2/stream" alt="camera" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
+    <img id="camStream" src="http://192.168.4.2/capture" alt="camera" onload="camPoll()" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
     <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
   </div>
   <div class="pills" style="margin-top:8px">
@@ -605,8 +605,9 @@ function exportCSV(){
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false;
-function toggleIR(){irOn=!irOn;fetch('http://192.168.4.2/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''});}
-function toggleLED(){ledOn=!ledOn;fetch('http://192.168.4.2/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''});}
+function camPoll(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';i.src='http://192.168.4.2/capture?r='+Date.now();}
+function toggleIR(){irOn=!irOn;fetch('http://192.168.4.2/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
+function toggleLED(){ledOn=!ledOn;fetch('http://192.168.4.2/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
