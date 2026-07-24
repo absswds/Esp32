@@ -442,6 +442,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .act-btn{flex:1;padding:7px;border-radius:5px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.68rem;font-weight:600;transition:all .15s}
 .act-btn:active{transform:scale(.95);background:rgba(20,184,166,.1);border-color:var(--c);color:var(--c)}
 #chart{width:100%;height:130px;display:block}
+.cam-wrap{position:relative;width:100%;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.cam-wrap img{width:100%;display:block}
+.cam-off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:.7rem}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media(max-width:400px){.grid{grid-template-columns:repeat(3,1fr)}.card .val{font-size:1rem}}
@@ -468,6 +471,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <div class="act-row">
     <button class="act-btn" onclick="exportCSV()">導出 CSV</button>
     <button class="act-btn" onclick="clearHist()">清除記錄</button>
+  </div>
+</div>
+<div class="sec">
+  <h2>即時影像</h2>
+  <div class="cam-wrap">
+    <img id="camStream" src="http://192.168.4.2/stream" alt="camera" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
+    <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
   </div>
 </div>
 <div class="sec">
