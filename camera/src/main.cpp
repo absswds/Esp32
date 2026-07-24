@@ -29,6 +29,10 @@ const char* AP_PASS = "12345678";
 #define CAM_PIN_href     2
 #define CAM_PIN_pclk    15
 
+// On-board peripherals
+#define PIN_IR   47   // IR fill light (active HIGH)
+#define PIN_LED   3   // White LED (active HIGH)
+
 WebServer server(80);
 
 void setup() {
@@ -149,9 +153,28 @@ void setup() {
       client.write(fb->buf, fb->len);
       client.print("\r\n");
       esp_camera_fb_return(fb);
+      yield();  // feed watchdog + allow other tasks
       delay(30);  // ~30fps cap
     }
     Serial.println("[STREAM] Client disconnected");
+  });
+
+  // IR + LED control
+  pinMode(PIN_IR, OUTPUT);
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_IR, LOW);
+  digitalWrite(PIN_LED, LOW);
+
+  server.on("/light", HTTP_GET, []() {
+    if (server.hasArg("ir"))   digitalWrite(PIN_IR,   server.arg("ir").toInt() ? HIGH : LOW);
+    if (server.hasArg("led"))  digitalWrite(PIN_LED,  server.arg("led").toInt() ? HIGH : LOW);
+    String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/status", HTTP_GET, []() {
+    String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
+    server.send(200, "application/json", json);
   });
 
   server.begin();

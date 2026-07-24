@@ -479,6 +479,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <img id="camStream" src="http://192.168.4.2/stream" alt="camera" onerror="this.style.display='none';document.getElementById('camOff').style.display='flex'">
     <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
   </div>
+  <div class="pills" style="margin-top:8px">
+    <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
+    <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
+  </div>
 </div>
 <div class="sec">
   <h2>系統控制</h2>
@@ -600,6 +604,9 @@ function exportCSV(){
   toast('已導出 '+allData.length+' 筆');
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
+var irOn=false,ledOn=false;
+function toggleIR(){irOn=!irOn;fetch('http://192.168.4.2/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''});}
+function toggleLED(){ledOn=!ledOn;fetch('http://192.168.4.2/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
