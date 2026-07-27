@@ -482,13 +482,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .card .val{font-size:clamp(1.2rem,2.2vw,1.7rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.045em}
 .card .lbl{font-size:.62rem;color:var(--t2);margin-top:5px;letter-spacing:.04em}
 .dashboard{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,.85fr);gap:14px;align-items:start}
-.primary-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.72fr);gap:10px;align-items:start}
-.chart-sec{grid-column:1/-1;min-height:0}.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.chart-toolbar h2{margin:0}.chart-toolbar .act-row{margin:0;width:auto;flex-shrink:0}.chart-toolbar .act-btn{min-width:82px}
+.primary-grid{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
+.chart-sec{min-height:0}.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.chart-toolbar h2{margin:0}.chart-toolbar .act-row{margin:0;width:auto;flex-shrink:0}.chart-toolbar .act-btn{min-width:82px}
 .desktop-charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.desktop-chart{min-width:0;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px}.desktop-chart h3{font-size:.62rem;font-weight:750;color:var(--t2);margin:0 0 5px}.desktop-chart.nest h3{color:var(--r)}.desktop-chart.room h3{color:var(--b)}.desktop-chart.vent h3{color:var(--o)}
-.desktop-chart canvas{width:100%;height:165px;display:block}.mobile-chart{display:none}.bottom-panels{display:grid;grid-template-columns:1fr 1fr;gap:10px}.control-col{display:grid;gap:10px}
+.desktop-chart canvas{width:100%;height:175px;display:block}.mobile-chart{display:none}.control-col{display:grid;gap:10px}
 .sec{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:0}
 .sec h2{font-size:.68rem;color:var(--t2);font-weight:750;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
-.cam-sec{height:100%}
+.cam-sec{height:auto}.cam-sec #camBody{min-height:0}
 .system-sec .btn{margin-bottom:2px}
 .control-col .sec{box-shadow:0 1px 0 rgba(255,255,255,.018)}
 .btn{width:100%;padding:11px;border-radius:6px;border:none;font-size:.85rem;font-weight:700;cursor:pointer;transition:all .15s}
@@ -522,7 +522,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media(max-width:900px){body{max-width:760px;padding:14px 16px}.dashboard,.primary-grid{grid-template-columns:1fr}.control-col{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.system-sec{grid-column:1/-1}.desktop-chart canvas{height:150px}}
-@media(max-width:768px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.bottom-panels{grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.desktop-charts{display:none}.mobile-chart{display:block}.chart-toolbar{align-items:flex-start;flex-direction:column;gap:8px}.chart-toolbar .act-row{width:100%}.chart-toolbar .act-btn{min-width:0}.mobile-chart #chart{height:150px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
+@media(max-width:768px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.desktop-charts{display:none}.mobile-chart{display:block}.chart-toolbar{align-items:flex-start;flex-direction:column;gap:8px}.chart-toolbar .act-row{width:100%}.chart-toolbar .act-btn{min-width:0}.mobile-chart #chart{height:150px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -560,7 +560,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
         </div>
       </div>
     </div>
-<div class="bottom-panels">
+    <div class="sec cam-sec" id="camSec">
+  <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
+  <div id="camBody">
+    <div class="cam-wrap">
+      <img id="camStream" src="" alt="camera" style="display:none" onload="camOk()" onerror="camErr()">
+      <div class="cam-off" id="camOff">攝像頭已關閉</div>
+    </div>
+    <div class="pills" style="margin-top:8px">
+      <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
+      <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
+    </div>
+  </div>
+</div>
+  </div>
+  <div class="control-col">
+<div class="sec system-sec">
+  <h2>系統控制</h2>
+  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
+  <div class="pills">
+    <div class="pill sys" id="pSys">待機</div>
+    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
+    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
+  </div>
+  <div class="pills" style="margin-top:6px">
+    <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
+  </div>
+</div>
 <div class="sec">
   <h2>實驗目標溫度</h2>
   <div class="fld">
@@ -593,34 +619,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     <span class="rv" id="vmaxV">50</span>
   </div>
   <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
-</div>
-</div>
-    <div class="sec cam-sec" id="camSec">
-  <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
-  <div id="camBody" style="display:none">
-    <div class="cam-wrap">
-      <img id="camStream" src="" alt="camera" onload="camOk()" onerror="camErr()">
-      <div class="cam-off" id="camOff" style="display:none">攝像頭離線</div>
-    </div>
-    <div class="pills" style="margin-top:8px">
-      <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
-      <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
-    </div>
-  </div>
-</div>
-  </div>
-  <div class="control-col">
-<div class="sec system-sec">
-  <h2>系統控制</h2>
-  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
-  <div class="pills">
-    <div class="pill sys" id="pSys">待機</div>
-    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
-    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
-  </div>
-  <div class="pills" style="margin-top:6px">
-    <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
-  </div>
 </div>
 <div class="sec">
   <h2>風速控制</h2>
@@ -736,8 +734,8 @@ async function doPoll(){
     camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
     // 串流時減少輪詢帶寬競爭
     var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
-    document.getElementById('camBody').style.display=camEnabled?'':'none';
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
+    if(!camEnabled){document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
@@ -779,9 +777,8 @@ var _cooling=false,_heating=false;
 function toggleCam(){
   camEnabled=!camEnabled;
   fetch('/camenable?on='+(camEnabled?1:0)).then(function(r){return r.json()}).then(function(d){camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
-    document.getElementById('camBody').style.display=camEnabled?'':'none';
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
-    if(camEnabled){camPoll();}
+    if(camEnabled){camPoll();}else{document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
   });
 }
 function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;fetch('/control?manual=1',{method:'POST'});tTest('cool',200);}else{tTest('cool',0);}}
