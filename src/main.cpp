@@ -24,13 +24,65 @@ OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
 WebServer server(80);
 
-// Camera frame cache — background fetch, instant serve
+// Camera frame cache — fetched by FreeRTOS task, served instantly
 uint8_t *camBuf = nullptr;
 size_t camLen = 0;
-unsigned long camLastFetch = 0;
+SemaphoreHandle_t camMutex = nullptr;
 // Light state cache (IR/LED)
 int lightIR = 0, lightLED = 0;
-unsigned long lightLastFetch = 0;
+SemaphoreHandle_t lightMutex = nullptr;
+
+// Background task: fetch camera frame + light status on core 0
+void camTask(void *arg) {
+  for (;;) {
+    delay(2000);  // 2s interval, task delay (not blocking loop)
+    WiFiClient c;
+    if (c.connect("192.168.4.2", 80, 2000)) {
+      // Fetch frame
+      c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      String hdr;
+      uint32_t t = millis();
+      while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
+      while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
+      size_t cl = 0;
+      int ci = hdr.indexOf("Content-Length:");
+      if (ci >= 0) cl = hdr.substring(ci + 15).toInt();
+      if (cl > 0 && cl < 80000) {
+        uint8_t *buf = (uint8_t*)malloc(cl);
+        if (buf) {
+          size_t got = 0; t = millis();
+          while (got < cl && (c.connected() || c.available())) { int r = c.read(buf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 3000) break; }
+          if (got == cl) {
+            if (xSemaphoreTake(camMutex, 100)) {
+              if (camBuf) free(camBuf);
+              camBuf = buf; camLen = cl;
+              xSemaphoreGive(camMutex);
+            } else { free(buf); }
+          } else { free(buf); }
+        }
+      }
+      c.stop();
+    }
+    delay(100);
+    // Fetch light status
+    if (c.connect("192.168.4.2", 80, 1000)) {
+      c.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      String body;
+      uint32_t t = millis();
+      while (c.connected() && c.available() == 0) { if (millis() - t > 1000) break; delay(1); }
+      while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
+      while (c.available()) body += (char)c.read();
+      c.stop();
+      int irPos = body.indexOf("\"ir\":");
+      int ledPos = body.indexOf("\"led\":");
+      if (xSemaphoreTake(lightMutex, 100)) {
+        if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
+        if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
+        xSemaphoreGive(lightMutex);
+      }
+    }
+  }
+}
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset= */ U8X8_PIN_NONE);
 
 // 三顆 DS18B20 — ROM 位址認人，不靠匯流排順序
@@ -729,6 +781,10 @@ poll();
 </html>)HTML";
 
 unsigned long lastOled = 0;
+unsigned long camLastFetch = 0;
+unsigned long lightLastFetch = 0;
+bool camOffline = true;       // start assuming camera is offline
+unsigned long camInterval = 10000;  // first retry in 10s
 
 void updateOLED() {
   u8g2.firstPage();
@@ -933,10 +989,13 @@ void loop() {
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 
-  // Background camera frame fetch — every 2s, serves cached frame to all clients
-  if (millis() - camLastFetch >= 2000) { camLastFetch = millis();
+  // Background camera + light polling from ESP32-S3 (192.168.4.2).
+  // Uses exponential backoff when the camera is offline so loop() never blocks.
+  if (millis() - camLastFetch >= camInterval) { camLastFetch = millis();
     WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 1500)) {
+    if (c.connect("192.168.4.2", 80, 500)) {
+      camOffline = false;
+      camInterval = 2000;                     // back online → normal 2s
       c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
@@ -956,17 +1015,26 @@ void loop() {
         }
       }
       c.stop();
+    } else {
+      if (!camOffline) {
+        camOffline = true;
+        camInterval = 10000;                  // offline → retry every 10s
+        Serial.println("[CAM] 192.168.4.2 offline, backing off to 10s");
+      }
     }
   }
 
-  // Background light status poll — syncs IR/LED across all clients
-  if (millis() - lightLastFetch >= 2000) { lightLastFetch = millis();
+  // Light status poll — same backoff, bundled with camera online/offline
+  if (camOffline) {
+    // skip light polling when camera is known offline (they share the same MCU)
+    lightLastFetch = millis();
+  } else if (millis() - lightLastFetch >= 2000) { lightLastFetch = millis();
     WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 1000)) {
+    if (c.connect("192.168.4.2", 80, 500)) {
       c.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
       String body;
       uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 1000) break; delay(1); }
+      while (c.connected() && c.available() == 0) { if (millis() - t > 500) break; delay(1); }
       while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
       while (c.available()) body += (char)c.read();
       c.stop();
