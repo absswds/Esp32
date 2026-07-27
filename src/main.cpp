@@ -989,59 +989,8 @@ void loop() {
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 
-  // Background camera + light polling from ESP32-S3 (192.168.4.2).
-  // Uses exponential backoff when the camera is offline so loop() never blocks.
-  if (millis() - camLastFetch >= camInterval) { camLastFetch = millis();
-    WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 500)) {
-      camOffline = false;
-      camInterval = 2000;                     // back online → normal 2s
-      c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
-      String hdr;
-      uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 1500) break; delay(1); }
-      while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
-      size_t cl = 0;
-      int ci = hdr.indexOf("Content-Length:");
-      if (ci >= 0) cl = hdr.substring(ci + 15).toInt();
-      if (cl > 0 && cl < 80000) {
-        if (camBuf) free(camBuf);
-        camBuf = (uint8_t*)malloc(cl);
-        if (camBuf) {
-          size_t got = 0; t = millis();
-          while (got < cl && (c.connected() || c.available())) { int r = c.read(camBuf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 2000) break; }
-          camLen = (got == cl) ? cl : 0;
-          if (camLen == 0) { free(camBuf); camBuf = nullptr; }
-        }
-      }
-      c.stop();
-    } else {
-      if (!camOffline) {
-        camOffline = true;
-        camInterval = 10000;                  // offline → retry every 10s
-        Serial.println("[CAM] 192.168.4.2 offline, backing off to 10s");
-      }
-    }
-  }
-
-  // Light status poll — same backoff, bundled with camera online/offline
-  if (camOffline) {
-    // skip light polling when camera is known offline (they share the same MCU)
-    lightLastFetch = millis();
-  } else if (millis() - lightLastFetch >= 2000) { lightLastFetch = millis();
-    WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 500)) {
-      c.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
-      String body;
-      uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 500) break; delay(1); }
-      while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
-      while (c.available()) body += (char)c.read();
-      c.stop();
-      int irPos = body.indexOf("\"ir\":");
-      if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
-      int ledPos = body.indexOf("\"led\":");
-      if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
-    }
-  }
+  // Camera + light are served on-demand via /cam and /light.
+  // No background polling needed — the ESP32-S3 camera MCU (192.168.4.2)
+  // is a separate system; when offline, endpoints return 502 gracefully.
+  // Background polling only blocks server.handleClient() — removed.
 }
