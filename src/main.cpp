@@ -331,11 +331,11 @@ void handleData() {
     if (isnan(tArr[i])) strcpy(tBuf[i], "null");
     else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
   }
-  char buf[700];
+  char buf[800];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
 
@@ -670,11 +670,11 @@ function exportCSV(){
   toast('已導出 '+allData.length+' 筆');
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
-var irOn=false,ledOn=false;
+var irOn=false,ledOn=false,camIP='';
 var camBusy=false;
-function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,1500);}
-function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,3000);}
-function camPoll(){if(camBusy)return;camBusy=true;document.getElementById('camStream').src='/cam?r='+Date.now();}
+function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,300);}
+function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,2000);}
+function camPoll(){if(camBusy)return;camBusy=true;var url=camIP?'http://'+camIP+'/capture':'/cam?r='+Date.now();document.getElementById('camStream').src=url;}
 if(camEnabled)camPoll();
 function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
 function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
@@ -717,7 +717,7 @@ async function doPoll(){
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
     // Sync camera state from server
-    camEnabled=d.camEnabled;
+    camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
     document.getElementById('camBody').style.display=camEnabled?'':'none';
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
@@ -1013,7 +1013,7 @@ void setup() {
       if (camEnabled) {
         // Reset backoff so polling starts promptly
         camLastFetch = 0;
-        camInterval = 2000;
+        camInterval = 1000;
         camOffline = false;
       }
       Serial.printf("[CAM] %s\n", camEnabled ? "enabled" : "disabled");
@@ -1053,7 +1053,7 @@ void loop() {
     WiFiClient c;
     if (c.connect(camIP, 80, 500)) {
       camOffline = false;
-      camInterval = 2000;
+      camInterval = 1000;
       c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
