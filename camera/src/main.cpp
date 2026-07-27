@@ -1,13 +1,11 @@
-// ESP32-S3 AI Camera → Multi-client MJPEG stream via raw sockets
-// Stream handler spawns a FreeRTOS task per client, uses lwip send() directly
-// Other endpoints (/capture, /light, /status) stay on esp_http_server
+// ESP32-S3 AI Camera → MJPEG stream server using esp_http_server
+// Each client connection gets its own task (free-threaded mode)
 // Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
 
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
-#include "lwip/sockets.h"
 
 // === WiFi ===
 const char* AP_SSID = "OPhone 12";
@@ -18,41 +16,25 @@ const char* AP_PASS = "qwer1234";
 
 static httpd_handle_t server = NULL;
 
-#define PART_BOUNDARY "esp32cam_boundary"
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char* STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-// ================== Raw Socket MJPEG Stream Task ==================
+// ================== Stream Handler ==================
 
-struct stream_ctx_t {
-  int fd;
-};
+static esp_err_t stream_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
-static void stream_task(void *arg) {
-  stream_ctx_t *ctx = (stream_ctx_t *)arg;
-  int fd = ctx->fd;
-  free(ctx);
-
-  Serial.printf("[STREAM] Task started fd=%d\n", fd);
-
-  // Send HTTP response header
-  const char *hdr = "HTTP/1.1 200 OK\r\n"
-                    "Content-Type: multipart/x-mixed-replace;boundary=" PART_BOUNDARY "\r\n"
-                    "Access-Control-Allow-Origin: *\r\n"
-                    "Connection: close\r\n"
-                    "\r\n";
-  if (lwip_send(fd, hdr, strlen(hdr), 0) < 0) {
-    Serial.printf("[STREAM] fd=%d header send failed\n", fd);
-    close(fd);
-    vTaskDelete(NULL);
-    return;
-  }
+  Serial.printf("[STREAM] Client connected (fd=%d)\n", httpd_req_to_sockfd(req));
 
   unsigned long lastSend = millis();
-  int frameCount = 0;
 
   while (true) {
+    // Timeout: disconnect after 30s of no frame sent
     if (millis() - lastSend > 30000) {
-      Serial.printf("[STREAM] fd=%d timeout (%d frames)\n", fd, frameCount);
+      Serial.printf("[STREAM] Client %d timeout\n", httpd_req_to_sockfd(req));
       break;
     }
 
@@ -62,61 +44,21 @@ static void stream_task(void *arg) {
       continue;
     }
 
-    char part_hdr[80];
-    int hdr_len = snprintf(part_hdr, sizeof(part_hdr), STREAM_PART, fb->len);
+    char part_buf[64];
+    size_t hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, fb->len);
 
-    int err = 0;
-    err |= (lwip_send(fd, "\r\n--" PART_BOUNDARY "\r\n", 19, MSG_MORE) < 0);
-    err |= (lwip_send(fd, part_hdr, hdr_len, MSG_MORE) < 0);
-    err |= (lwip_send(fd, (const char*)fb->buf, fb->len, 0) < 0);
+    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
 
     esp_camera_fb_return(fb);
-
-    if (err) {
-      Serial.printf("[STREAM] fd=%d send error after %d frames\n", fd, frameCount);
-      break;
-    }
-
-    frameCount++;
     lastSend = millis();
-    delay(100);  // ~10fps + yield
+
+    // Yield to other tasks between frames
+    delay(1);
   }
 
-  close(fd);
-  Serial.printf("[STREAM] fd=%d task exiting (%d frames)\n", fd, frameCount);
-  vTaskDelete(NULL);
-}
-
-// ================== Stream Handler (dup fd, spawn task, return) ==================
-
-static esp_err_t stream_handler(httpd_req_t *req) {
-  int fd = httpd_req_to_sockfd(req);
-  if (fd < 0) {
-    Serial.println("[STREAM] Invalid fd");
-    return ESP_FAIL;
-  }
-
-  Serial.printf("[STREAM] Client connecting fd=%d\n", fd);
-
-  stream_ctx_t *ctx = (stream_ctx_t *)malloc(sizeof(stream_ctx_t));
-  if (!ctx) {
-    return ESP_FAIL;
-  }
-  ctx->fd = fd;
-
-  BaseType_t ret = xTaskCreatePinnedToCore(
-    stream_task, "mjpeg", 4096, ctx, 1, NULL, 0
-  );
-
-  if (ret != pdPASS) {
-    Serial.println("[STREAM] xTaskCreate failed");
-    free(ctx);
-    free(ctx);
-    return ESP_FAIL;
-  }
-
-  // Prevent httpd from sending response - stream_task handles everything
-  // Set a flag so httpd skips the response
+  Serial.printf("[STREAM] Client %d disconnected\n", httpd_req_to_sockfd(req));
   return ESP_OK;
 }
 
@@ -248,10 +190,7 @@ void setup() {
   }
 
   esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("[CAM] Init FAILED: 0x%x\n", err);
-    return;
-  }
+  if (err != ESP_OK) { Serial.printf("[CAM] Init FAILED: 0x%x\n", err); return; }
   Serial.println("[CAM] Init OK");
 
   sensor_t *s = esp_camera_sensor_get();
@@ -268,13 +207,17 @@ void setup() {
   s->set_gainceiling(s, (gainceiling_t)2);
   s->set_ae_level(s, 1);
 
+  pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
+  pinMode(PIN_LED, OUTPUT); digitalWrite(PIN_LED, LOW);
+
   WiFi.setHostname("esp32-cam");
   WiFi.setSleep(false);
   connectWiFi();
 
-  pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
-  pinMode(PIN_LED, OUTPUT); digitalWrite(PIN_LED, LOW);
+  Serial.println("[CAM] Ready");
 }
+
+// ================== Loop ==================
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
