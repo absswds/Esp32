@@ -59,6 +59,9 @@ int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防
 bool camEnabled = false;       // 相機開關 — 默認關閉
 bool camIPConfirmed = false;    // mDNS 確認過相機 IP
 unsigned long lastCamResolve = 0;
+bool stateSavePending = false;
+unsigned long stateSaveDue = 0;
+const unsigned long STATE_SAVE_DEBOUNCE_MS = 750;
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -80,6 +83,7 @@ float nestOffset = 0, roomOffset = 0, ventOffset = 0;
 // 前置宣告
 void saveState();
 void loadState();
+void scheduleStateSave();
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
@@ -333,13 +337,22 @@ void handleControl() {
     ventOffset = constrain(server.arg("ventOff").toFloat(), -5, 5);
     changed = true;
   }
-  if (changed) saveState();
+  if (changed) {
+    if (server.hasArg("system")) saveState();
+    else scheduleStateSave();
+  }
   controlTemp();
   server.send(200, "text/plain", "OK");
 }
 
 // #31 斷電恢復：保存/讀取系統狀態到 EEPROM
+void scheduleStateSave() {
+  stateSavePending = true;
+  stateSaveDue = millis() + STATE_SAVE_DEBOUNCE_MS;
+}
+
 void saveState() {
+  stateSavePending = false;
   EEPROM.write(0, 0xAA);           // valid flag
   EEPROM.write(1, systemOn ? 1 : 0);
   EEPROM.put(2, targetTemp);
@@ -583,7 +596,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=600,allData=[],ms=1000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false;
+var H=[],M=600,allData=[],ms=1000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false,controlTimers={};
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -691,13 +704,14 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var b=document.getElementById('sysBtn'),on=b.classList.contains('off');b.className=on?'btn on':'btn off';b.textContent=on?'停止系統':'開啟系統';fetch('/control?system='+(on?1:0),{method:'POST'});doPoll();}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'});doPoll();}
+function queueControl(key,query){clearTimeout(controlTimers[key]);controlTimers[key]=setTimeout(function(){fetch('/control?'+query,{method:'POST'});},300);}
 function setTGT(v){
   v=parseFloat(v);
   if(isNaN(v))return;
   v=Math.round(v*100)/100;
   document.getElementById('tgtV').value=v.toFixed(1);
   document.getElementById('tgt').value=v;
-  fetch('/control?targetTemp='+v,{method:'POST'});
+  queueControl('targetTemp','targetTemp='+v);
 }
 function setHYST(v){
   v=parseFloat(v);
@@ -705,11 +719,11 @@ function setHYST(v){
   v=Math.round(v*100)/100;
   document.getElementById('hystV').value=v.toFixed(2);
   document.getElementById('hyst').value=v;
-  fetch('/control?hysteresis='+v,{method:'POST'});
+  queueControl('hysteresis','hysteresis='+v);
 }
-function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMin='+v,{method:'POST'});}
-function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);fetch('/control?safeMax='+v,{method:'POST'});}
-function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);fetch('/control?ventMax='+v,{method:'POST'});}
+function setSMin(v){document.getElementById('sminV').textContent=parseFloat(v).toFixed(1);queueControl('safeMin','safeMin='+v);}
+function setSMax(v){document.getElementById('smaxV').textContent=parseFloat(v).toFixed(1);queueControl('safeMax','safeMax='+v);}
+function setVMax(v){document.getElementById('vmaxV').textContent=parseFloat(v).toFixed(0);queueControl('ventMax','ventMax='+v);}
 function setFanM(v){fm=true;document.getElementById('fanV').textContent=v+'%';fetch('/test?fan='+Math.round(v*255/100));setTimeout(function(){fm=false;},3000);}
 async function tTest(type,val){
   try{var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';await fetch(url);}catch(e){}
@@ -997,6 +1011,10 @@ void loop() {
   if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
+
+  if (stateSavePending && (long)(millis() - stateSaveDue) >= 0) {
+    saveState();
+  }
 
   // 定期重查相機 IP
   unsigned long resolveInterval = camIPConfirmed ? 60000 : 5000;
