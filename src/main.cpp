@@ -1039,6 +1039,23 @@ void setup() {
     server.send(200, "application/json", json);
   });
 
+  server.on("/setcamip", []() {
+    if (server.hasArg("ip")) {
+      IPAddress newIP;
+      if (newIP.fromString(server.arg("ip"))) {
+        camIP = newIP;
+        camIPConfirmed = true;
+        lastCamResolve = millis();
+        server.send(200, "application/json", "{\"ok\":true}");
+        Serial.printf("[CAM] Manual IP set: %s\n", camIP.toString().c_str());
+      } else {
+        server.send(200, "application/json", "{\"ok\":false}");
+      }
+    } else {
+      server.send(200, "application/json", "{\"ok\":false}");
+    }
+  });
+
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("[Server] OK\n");
