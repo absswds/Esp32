@@ -611,7 +611,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false;
+var H=[],M=600,allData=[],ms=1000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false;
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -730,8 +730,8 @@ async function doPoll(){
     document.getElementById('dot').className='dot err';
   }
 }
-function toggleSys(){fm=false;var on=document.getElementById('sysBtn').classList.contains('off');fetch('/control?system='+(on?1:0),{method:'POST'}).then(function(){doPoll();});}
-function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'}).then(function(){doPoll();});}
+function toggleSys(){fm=false;var b=document.getElementById('sysBtn'),on=b.classList.contains('off');b.className=on?'btn on':'btn off';b.textContent=on?'停止系統':'開啟系統';fetch('/control?system='+(on?1:0),{method:'POST'});doPoll();}
+function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'});doPoll();}
 function setTGT(v){
   v=parseFloat(v);
   if(isNaN(v))return;
