@@ -719,6 +719,8 @@ async function doPoll(){
     }
     // Sync camera state from server
     camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
+    // 串流時減少輪詢帶寬競爭
+    var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
     document.getElementById('camBody').style.display=camEnabled?'':'none';
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});

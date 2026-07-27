@@ -220,7 +220,7 @@ void setup() {
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.fb_count     = 2;
   config.frame_size   = FRAMESIZE_UXGA;     // 大 buffer 預分配
-  config.jpeg_quality = 18;
+  config.jpeg_quality = 20;
 
   if (!psramFound()) {
     config.frame_size  = FRAMESIZE_QVGA;
