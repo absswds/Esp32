@@ -5,10 +5,11 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <WebServer.h>
+#include <ESPmDNS.h>
 
 // === WiFi ===
-const char* AP_SSID = "ESP32-TEMP";
-const char* AP_PASS = "12345678";
+const char* AP_SSID = "OPhone 12";
+const char* AP_PASS = "qwer1234";
 
 // === DFRobot DFR1154 ESP32-S3 AI Camera pinout (OV3660) ===
 // Source: https://github.com/DFRobot/DFR1154_Examples
@@ -90,13 +91,9 @@ void setup() {
   s->set_vflip(s, 1);
   s->set_hmirror(s, 0);
 
-  // WiFi — join ESP32-TEMP AP
-  // Static IP so dashboard knows where to find us
-  IPAddress camIP(192, 168, 4, 2);
-  IPAddress gateway(192, 168, 4, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.config(camIP, gateway, subnet);
-
+  // WiFi — connect to user's hotspot, use DHCP
+  // mDNS hostname: esp32-cam.local — main TEC board finds us by name
+  WiFi.setHostname("esp32-cam");
   WiFi.begin(AP_SSID, AP_PASS);
   Serial.printf("[WiFi] Connecting to %s", AP_SSID);
   int tries = 0;
@@ -110,6 +107,13 @@ void setup() {
     return;
   }
   Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
+
+  // mDNS — announce as esp32-cam.local
+  if (MDNS.begin("esp32-cam")) {
+    Serial.println("[MDNS] esp32-cam.local ready");
+  } else {
+    Serial.println("[MDNS] Failed to start");
+  }
 
   // HTTP routes
   server.on("/", HTTP_GET, []() {

@@ -6,6 +6,7 @@
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
 #include <EEPROM.h>
+#include <ESPmDNS.h>
 #include "esp_task_wdt.h"
 
 #define FAN_PIN 18
@@ -37,9 +38,9 @@ void camTask(void *arg) {
   for (;;) {
     delay(2000);  // 2s interval, task delay (not blocking loop)
     WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 2000)) {
+    if (c.connect(camIP, 80, 2000)) {
       // Fetch frame
-      c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
       while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
@@ -65,8 +66,8 @@ void camTask(void *arg) {
     }
     delay(100);
     // Fetch light status
-    if (c.connect("192.168.4.2", 80, 1000)) {
-      c.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+    if (c.connect(camIP, 80, 1000)) {
+      c.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String body;
       uint32_t t = millis();
       while (c.connected() && c.available() == 0) { if (millis() - t > 1000) break; delay(1); }
@@ -112,6 +113,7 @@ unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
 int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防止瞬態雜訊誤觸）
 bool camEnabled = false;       // 相機開關 — 默認關閉
+IPAddress camIP(192, 168, 4, 2);  // 相機 IP，優先經 mDNS 解析
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -931,8 +933,35 @@ void setup() {
   u8g2.setContrast(128);
   Serial.println("[OLED] 就緒");
 
-  WiFi.softAP("ESP32-TEMP", "12345678");
-  Serial.printf("[WiFi] %s\n", WiFi.softAPIP().toString().c_str());
+  // 優先連自家 WiFi，失敗才開 AP 備用
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setHostname("esp32-tec");
+  WiFi.begin("OPhone 12", "qwer1234");
+  Serial.print("[WiFi] 連接到 OPhone 12");
+  for (int wcnt = 0; wcnt < 20; wcnt++) {
+    if (WiFi.status() == WL_CONNECTED) break;
+    esp_task_wdt_reset();
+    delay(500);
+    Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] STA IP: %s\n", WiFi.localIP().toString().c_str());
+    // mDNS: 找相機 esp32-cam.local
+    if (MDNS.begin("esp32-tec")) {
+      Serial.println("[MDNS] esp32-tec.local ready");
+      IPAddress resolved = MDNS.queryHost("esp32-cam");
+      if (resolved != INADDR_NONE) {
+        camIP = resolved;
+        Serial.printf("[MDNS] esp32-cam → %s\n", camIP.toString().c_str());
+      } else {
+        Serial.printf("[MDNS] esp32-cam not found, using %s\n", camIP.toString().c_str());
+      }
+    }
+  } else {
+    Serial.println("\n[WiFi] 連線失敗，切換 AP 模式");
+    WiFi.softAP("ESP32-TEMP", "12345678");
+    Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+  }
 
   server.on("/", handleRoot);
   server.on("/data", handleData);
@@ -952,12 +981,12 @@ void setup() {
   server.on("/light", []() {
     // Apply changes first (blocking, ~100ms, acceptable since user clicked)
     WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 2000)) {
+    if (c.connect(camIP, 80, 2000)) {
       String q = "";
       if (server.hasArg("ir"))  q += "ir=" + server.arg("ir");
       if (server.hasArg("led")) { if (q.length()) q += "&"; q += "led=" + server.arg("led"); }
       String path = q.length() ? ("/light?" + q) : "/status";
-      c.printf("GET %s HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n", path.c_str());
+      c.printf("GET %s HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n", path.c_str());
       String body;
       uint32_t t = millis();
       while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
@@ -1022,10 +1051,10 @@ void loop() {
   // Camera background polling — only runs when user enables camera in UI
   if (camEnabled && millis() - camLastFetch >= camInterval) { camLastFetch = millis();
     WiFiClient c;
-    if (c.connect("192.168.4.2", 80, 500)) {
+    if (c.connect(camIP, 80, 500)) {
       camOffline = false;
       camInterval = 2000;
-      c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
       while (c.connected() && c.available() == 0) { if (millis() - t > 1500) break; delay(1); }
@@ -1045,8 +1074,8 @@ void loop() {
       }
       c.stop();
       // Light status — bundled with camera since they share the same MCU
-      { WiFiClient c2; if (c2.connect("192.168.4.2", 80, 500)) {
-        c2.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      { WiFiClient c2; if (c2.connect(camIP, 80, 500)) {
+        c2.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
         String body;
         uint32_t t2 = millis();
         while (c2.connected() && c2.available() == 0) { if (millis() - t2 > 500) break; delay(1); }
@@ -1062,7 +1091,7 @@ void loop() {
       if (!camOffline) {
         camOffline = true;
         camInterval = 10000;
-        Serial.println("[CAM] 192.168.4.2 offline, retry in 10s");
+        Serial.println("[CAM] camIP offline, retry in 10s");
       }
     }
   }

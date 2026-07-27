@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TEC-12706 vs TEC-12703 性能對比分析</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#f5f7fa;color:#1a1a2e;padding:20px 24px;max-width:1024px;margin:0 auto}
+h1{font-size:1.5rem;text-align:center;margin-bottom:4px;color:#0f766e}
+h2{font-size:1rem;color:#0f766e;margin:28px 0 12px;border-bottom:2px solid #e2e8f0;padding-bottom:6px}
+h3{font-size:.85rem;color:#475569;margin:16px 0 8px}
+.sub{text-align:center;color:#94a3b8;font-size:.78rem;margin-bottom:24px}
+.kpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
+.kpi-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 12px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.kpi-card .v{font-size:1.4rem;font-weight:800;line-height:1.2}
+.kpi-card .l{font-size:.55rem;color:#94a3b8;margin-top:4px;text-transform:uppercase;letter-spacing:.5px}
+.kpi-card .win{font-size:.65rem;font-weight:700;margin-top:4px}
+.red{color:#dc2626}.blue{color:#2563eb}.orange{color:#ea580c}.teal{color:#0d9488}.green{color:#16a34a}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.comp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.comp-item{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
+.comp-item .val{font-size:1.2rem;font-weight:800}
+.comp-item .lbl{font-size:.55rem;color:#94a3b8;margin-top:2px}
+.comp-item .delta{font-size:.78rem;font-weight:700;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:.75rem;margin:10px 0}
+th{text-align:left;color:#64748b;font-weight:600;padding:8px 10px;border-bottom:1px solid #e2e8f0;text-transform:uppercase;letter-spacing:.5px}
+td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+tr.best{background:#f0fdfa}
+.ch-wrap{position:relative;height:320px;margin:8px 0}
+.note{font-size:.75rem;color:#64748b;line-height:1.7;margin-top:8px}
+.note b{color:#0f766e}
+.verdict{background:linear-gradient(135deg,#f0fdfa,#ecfdf5);border:2px solid #0d9488;border-radius:10px;padding:20px;margin:20px 0}
+.verdict h3{margin:0;color:#0f766e}
+.verdict p{font-size:.82rem;line-height:1.7;margin-top:8px;color:#475569}
+.verdict ul{margin:10px 0 0 20px;font-size:.8rem;line-height:1.8;color:#475569}
+.verdict strong{color:#1a1a2e}
+@media(max-width:700px){.kpi{grid-template-columns:repeat(2,1fr)}.comp{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>TEC-12706 vs TEC-12703 性能對比分析</h1>
+<p class="sub">2026-07-22 對比測試 · 目標製冷 20°C / 加熱 28°C · 風扇全速 100%</p>
+
+<div class="kpi">
+  <div class="kpi-card">
+    <div class="v blue">0.414 vs 0.448</div>
+    <div class="l">製冷速率 °C/min</div>
+    <div class="win green">12703 快 8.2%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="v orange">1.297 vs 1.419</div>
+    <div class="l">加熱速率 °C/min</div>
+    <div class="win green">12703 快 9.4%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="v teal">609 vs 616</div>
+    <div class="l">製冷用時 (秒)</div>
+    <div class="win">相當</div>
+  </div>
+  <div class="kpi-card">
+    <div class="v teal">-4.2 vs -4.6</div>
+    <div class="l">降溫幅度 °C</div>
+    <div class="win">12703 略深</div>
+  </div>
+</div>
+
+<h2>1. 製冷性能對比</h2>
+<div class="comp">
+  <div class="comp-item">
+    <div class="val blue">TEC-12706</div>
+    <div class="lbl">巢穴 29.1 → 24.9°C · Δ -4.2°C</div>
+    <div class="delta blue">0.414 °C/min</div>
+  </div>
+  <div class="comp-item">
+    <div class="val teal">TEC-12703</div>
+    <div class="lbl">巢穴 29.5 → 24.9°C · Δ -4.6°C</div>
+    <div class="delta teal">0.448 °C/min</div>
+  </div>
+</div>
+<div class="ch-wrap"><canvas id="coolChart"></canvas></div>
+<p class="note"><b>分析：</b>12703 製冷速率略快（0.448 vs 0.414 °C/min），差異約 8%。兩者在 25°C 以下降溫都明顯放緩，這是接近室溫的物理瓶頸，不是 TEC 能力的差異。</p>
+
+<h2>2. 加熱性能對比</h2>
+<div class="comp">
+  <div class="comp-item">
+    <div class="val orange">TEC-12706</div>
+    <div class="lbl">巢穴 24.9 → 31.6°C · Δ +6.7°C</div>
+    <div class="delta orange">1.297 °C/min</div>
+  </div>
+  <div class="comp-item">
+    <div class="val teal">TEC-12703</div>
+    <div class="lbl">巢穴 24.9 → 31.9°C · Δ +7.0°C</div>
+    <div class="delta teal">1.419 °C/min</div>
+  </div>
+</div>
+<div class="ch-wrap"><canvas id="heatChart"></canvas></div>
+<p class="note"><b>分析：</b>12703 加熱速率 1.42 vs 1.30 °C/min，差異約 9%。TEC 加熱模式效率高於製冷（焦耳熱 + 泵熱疊加），兩型號一致。</p>
+
+<h2>3. 製冷同軸對照</h2>
+<div class="ch-wrap"><canvas id="coolAlign"></canvas></div>
+
+<h2>4. 加熱同軸對照</h2>
+<div class="ch-wrap"><canvas id="heatAlign"></canvas></div>
+
+<h2>5. 數據總表</h2>
+<div class="card">
+<table>
+<thead><tr><th>指標</th><th>12706 製冷</th><th>12703 製冷</th><th>12706 加熱</th><th>12703 加熱</th></tr></thead>
+<tbody>
+<tr class="best"><td>巢穴起始 °C</td><td>29.1</td><td>29.5</td><td>24.9</td><td>24.9</td></tr>
+<tr><td>巢穴結束 °C</td><td>24.9</td><td>24.9</td><td>31.6</td><td>31.9</td></tr>
+<tr><td>巢穴 Δ °C</td><td>-4.2</td><td>-4.6</td><td>+6.7</td><td>+7.0</td></tr>
+<tr><td>活動區 Δ °C</td><td>-4.5</td><td>-4.1</td><td>+6.7</td><td>+6.0</td></tr>
+<tr><td>出風口 Δ °C</td><td>-4.3</td><td>-4.1</td><td>+6.2</td><td>+6.0</td></tr>
+<tr><td>實驗時長 (秒)</td><td>609</td><td>616</td><td>310</td><td>296</td></tr>
+<tr class="best"><td>速率 °C/min</td><td class="blue">0.414</td><td class="teal">0.448 ★</td><td class="orange">1.297</td><td class="teal">1.419 ★</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="verdict">
+<h3>✅ 結論：TEC-12703 全面勝出</h3>
+<ul>
+  <li><strong>製冷：</strong>12703 快 8.2%（0.448 vs 0.414 °C/min）— 每降 5°C 省約 1 分鐘</li>
+  <li><strong>加熱：</strong>12703 快 9.4%（1.419 vs 1.297 °C/min）— 喚醒循環省約 30 秒</li>
+  <li><strong>能效：</strong>12703 標稱 3A，12706 標稱 6A — 一半電流、更好效果（實際受限於 H-bridge）</li>
+  <li><strong>實驗適用：</strong>論文喚醒速率 0.7–1.0 °C/min，兩者加熱偏快（1.3–1.4），需 PWM 限功率。12703 功率調節範圍更寬裕</li>
+  <li><strong>建議：</strong>保留 <strong style="color:#0d9488">TEC-12703</strong>，程式無需修改</li>
+</ul>
+</div>
+
+<script>
+(function(){
+var d06=[{s:0,n:29.1},{s:10,n:29.3},{s:20,n:29.4},{s:30,n:29.5},{s:40,n:29.5},{s:50,n:29.4},{s:60,n:29.3},{s:70,n:29.1},{s:80,n:28.9},{s:90,n:28.6},{s:100,n:28.4},{s:110,n:28.3},{s:120,n:28.0},{s:130,n:27.9},{s:140,n:27.6},{s:150,n:27.5},{s:160,n:27.3},{s:170,n:27.1},{s:180,n:26.9},{s:190,n:26.9},{s:200,n:26.6},{s:210,n:26.5},{s:220,n:26.4},{s:230,n:26.3},{s:240,n:26.1},{s:250,n:26.0},{s:260,n:25.9},{s:270,n:25.8},{s:280,n:25.8},{s:290,n:25.6},{s:300,n:25.5},{s:310,n:25.4},{s:320,n:25.4},{s:330,n:25.4},{s:340,n:25.3},{s:350,n:25.3},{s:360,n:25.1},{s:370,n:25.1},{s:380,n:25.0},{s:390,n:25.0},{s:400,n:25.0},{s:410,n:24.9},{s:420,n:24.9},{s:430,n:24.9},{s:440,n:24.9},{s:450,n:24.9},{s:460,n:24.9},{s:470,n:24.8},{s:480,n:24.8},{s:490,n:24.8},{s:500,n:24.8},{s:510,n:24.8},{s:520,n:24.8},{s:530,n:24.8},{s:540,n:24.9},{s:550,n:24.8},{s:560,n:24.8},{s:570,n:24.8},{s:580,n:24.8},{s:590,n:24.8},{s:600,n:24.8}];
+var d03=[{s:0,n:29.5},{s:10,n:29.6},{s:20,n:29.8},{s:30,n:29.8},{s:40,n:29.8},{s:50,n:29.6},{s:60,n:29.5},{s:70,n:29.3},{s:80,n:29.0},{s:90,n:28.8},{s:100,n:28.5},{s:110,n:28.4},{s:120,n:28.0},{s:130,n:27.9},{s:140,n:27.6},{s:150,n:27.4},{s:160,n:27.3},{s:170,n:27.1},{s:180,n:26.9},{s:190,n:26.8},{s:200,n:26.6},{s:210,n:26.5},{s:220,n:26.4},{s:230,n:26.3},{s:240,n:26.1},{s:250,n:26.1},{s:260,n:26.0},{s:270,n:25.9},{s:280,n:25.8},{s:290,n:25.8},{s:300,n:25.8},{s:310,n:25.6},{s:320,n:25.6},{s:330,n:25.5},{s:340,n:25.5},{s:350,n:25.5},{s:360,n:25.4},{s:370,n:25.4},{s:380,n:25.3},{s:390,n:25.4},{s:400,n:25.3},{s:410,n:25.3},{s:420,n:25.1},{s:430,n:25.1},{s:440,n:25.1},{s:450,n:25.1},{s:460,n:25.1},{s:470,n:25.1},{s:480,n:25.0},{s:490,n:25.0},{s:500,n:25.0},{s:510,n:25.0},{s:520,n:24.9},{s:530,n:24.9},{s:540,n:24.9},{s:550,n:24.9},{s:560,n:24.9},{s:570,n:24.9},{s:580,n:24.9},{s:590,n:24.9},{s:600,n:24.9},{s:610,n:24.9}];
+var lb06=[],lb03=[];
+d06.forEach(function(r){lb06.push('12706: '+r.n.toFixed(1)+'°C @'+r.s+'s');});
+d03.forEach(function(r){lb03.push('12703: '+r.n.toFixed(1)+'°C @'+r.s+'s');});
+
+var opt={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#475569',font:{size:11}}}},scales:{x:{title:{text:'秒',display:true,color:'#94a3b8'},ticks:{color:'#94a3b8',font:{size:10}},grid:{color:'#e2e8f0'}},y:{title:{text:'巢穴溫度 °C',display:true,color:'#94a3b8'},ticks:{color:'#94a3b8',font:{size:10}},grid:{color:'#e2e8f0'}}}};
+
+new Chart(document.getElementById('coolChart'),{type:'line',data:{labels:d06.map(function(_,i){return i;}),datasets:[
+  {label:'TEC-12706 巢穴',data:d06.map(function(r){return r.n;}),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.08)',fill:true,tension:.3,pointRadius:0},
+  {label:'TEC-12703 巢穴',data:d03.map(function(r){return r.n;}),borderColor:'#0d9488',backgroundColor:'rgba(13,148,136,.08)',fill:true,tension:.3,pointRadius:0}
+]},options:opt});
+
+new Chart(document.getElementById('coolAlign'),{type:'line',data:{labels:Array.from({length:63},function(_,i){return (i*10)+'s';}),datasets:[
+  {label:'TEC-12706 巢穴',data:[29.1,29.3,29.4,29.5,29.5,29.4,29.3,29.1,28.9,28.6,28.4,28.3,28.0,27.9,27.6,27.5,27.3,27.1,26.9,26.9,26.6,26.5,26.4,26.3,26.1,26.0,25.9,25.8,25.8,25.6,25.5,25.4,25.4,25.4,25.3,25.3,25.1,25.1,25.0,25.0,25.0,24.9,24.9,24.9,24.9,24.9,24.9,24.8,24.8,24.8,24.8,24.8,24.8,24.8,24.9,24.8,24.8,24.8,24.8,24.8,24.8,NaN,NaN],borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.06)',fill:true,tension:.3,pointRadius:0},
+  {label:'TEC-12703 巢穴',data:[29.5,29.6,29.8,29.8,29.8,29.6,29.5,29.3,29.0,28.8,28.5,28.4,28.0,27.9,27.6,27.4,27.3,27.1,26.9,26.8,26.6,26.5,26.4,26.3,26.1,26.1,26.0,25.9,25.8,25.8,25.8,25.6,25.6,25.5,25.5,25.5,25.4,25.4,25.3,25.4,25.3,25.3,25.1,25.1,25.1,25.1,25.1,25.1,25.0,25.0,25.0,25.0,24.9,24.9,24.9,24.9,24.9,24.9,24.9,24.9,24.9,24.9,NaN],borderColor:'#0d9488',backgroundColor:'rgba(13,148,136,.06)',fill:true,tension:.3,pointRadius:0},
+  {label:'目標 20°C',data:Array.from({length:63},function(){return 20;}),borderColor:'#dc2626',borderDash:[6,4],borderWidth:1,pointRadius:0,fill:false}
+]},options:opt});
+
+var opt2={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#475569',font:{size:11}}}},scales:{x:{title:{text:'秒',display:true,color:'#94a3b8'},ticks:{color:'#94a3b8',font:{size:10},maxTicksLimit:15},grid:{color:'#e2e8f0'}},y:{title:{text:'巢穴溫度 °C',display:true,color:'#94a3b8'},ticks:{color:'#94a3b8',font:{size:10}},grid:{color:'#e2e8f0'}}}};
+
+new Chart(document.getElementById('heatChart'),{type:'line',data:{labels:Array.from({length:31},function(_,i){return i;}),datasets:[
+  {label:'TEC-12706 巢穴',data:[24.9,24.9,25.0,25.0,25.3,25.4,25.6,25.8,26.1,26.4,26.8,27.0,27.5,27.6,28.1,28.4,28.6,28.9,29.3,29.5,29.8,29.9,30.1,30.4,30.6,30.8,30.9,31.0,31.3,31.3,31.5],borderColor:'#ea580c',backgroundColor:'rgba(234,88,12,.08)',fill:true,tension:.3,pointRadius:0},
+  {label:'TEC-12703 巢穴',data:[24.9,24.9,25.0,25.1,25.4,25.6,26.1,26.4,26.9,27.3,27.6,27.9,28.4,28.6,29.0,29.3,29.6,29.8,30.1,30.3,30.5,30.8,30.9,31.0,31.3,31.4,31.6,31.8,31.9,NaN,NaN],borderColor:'#0d9488',backgroundColor:'rgba(13,148,136,.08)',fill:true,tension:.3,pointRadius:0}
+]},options:opt2});
+
+new Chart(document.getElementById('heatAlign'),{type:'line',data:{labels:Array.from({length:32},function(_,i){return (i*10)+'s';}),datasets:[
+  {label:'TEC-12706 巢穴',data:[24.9,24.9,25.0,25.0,25.3,25.4,25.6,25.8,26.1,26.4,26.8,27.0,27.5,27.6,28.1,28.4,28.6,28.9,29.3,29.5,NaN,29.8,NaN,29.9,30.1,30.4,30.6,30.8,30.9,31.0,31.3,31.3],borderColor:'#ea580c',backgroundColor:'rgba(234,88,12,.06)',fill:true,tension:.3,pointRadius:0,spanGaps:true},
+  {label:'TEC-12703 巢穴',data:[24.9,24.9,25.0,25.1,25.4,25.7,26.2,26.6,27.0,27.4,27.8,28.1,28.5,28.8,29.1,29.4,29.7,30.0,30.3,30.5,30.7,30.9,31.0,31.2,31.3,31.5,31.7,31.8,31.9,NaN,NaN,NaN],borderColor:'#0d9488',backgroundColor:'rgba(13,148,136,.06)',fill:true,tension:.3,pointRadius:0,spanGaps:true}
+]},options:opt2});
+})();
+</script>
+</body>
+</html>
