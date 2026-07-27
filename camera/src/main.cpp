@@ -197,7 +197,7 @@ void setup() {
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.fb_count     = 2;
   config.frame_size   = FRAMESIZE_UXGA;     // 大 buffer 預分配
-  config.jpeg_quality = 12;
+  config.jpeg_quality = 18;
 
   if (!psramFound()) {
     config.frame_size  = FRAMESIZE_QVGA;
@@ -223,6 +223,13 @@ void setup() {
   s->set_brightness(s, 1);
   s->set_contrast(s, 1);
   s->set_saturation(s, 0);
+  // AEC/AGC 穩定：防止運動時曝光突跳導致卡頓
+  s->set_exposure_ctrl(s, 1);     // 開 auto exposure
+  s->set_aec2(s, 0);              // 關閉 DSP auto exposure (減少抖動)
+  s->set_agc_gain(s, 0);          // 固定增益
+  s->set_gain_ctrl(s, 1);         // auto gain
+  s->set_gainceiling(s, (gainceiling_t)2); // gain ceiling 2x
+  s->set_ae_level(s, 1);          // 曝光補償 +1
 
   // WiFi
   WiFi.setHostname("esp32-cam");

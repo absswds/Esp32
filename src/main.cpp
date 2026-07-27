@@ -1010,9 +1010,9 @@ void setup() {
     if (server.hasArg("on")) {
       camEnabled = server.arg("on").toInt() == 1;
       if (camEnabled) {
-        // Reset backoff so polling starts promptly
+        // 瀏覽器直連串流，背景輪詢降為每 30 秒一次（僅供 /cam 降級備用）
         camLastFetch = 0;
-        camInterval = 1000;
+        camInterval = 30000;
         camOffline = false;
       }
       Serial.printf("[CAM] %s\n", camEnabled ? "enabled" : "disabled");
@@ -1052,7 +1052,7 @@ void loop() {
     WiFiClient c;
     if (c.connect(camIP, 80, 500)) {
       camOffline = false;
-      camInterval = 1000;
+      camInterval = 30000;
       c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
