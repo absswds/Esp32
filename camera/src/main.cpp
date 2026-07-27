@@ -46,7 +46,15 @@ static esp_err_t stream_handler(httpd_req_t *req) {
 
   Serial.println("[STREAM] Client connected");
 
+  unsigned long lastSend = millis();
+
   while (true) {
+    // Timeout: disconnect after 15s of no successful send
+    if (millis() - lastSend > 15000) {
+      Serial.println("[STREAM] Client timeout, disconnecting");
+      break;
+    }
+
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
       delay(5);
@@ -62,6 +70,10 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
 
     esp_camera_fb_return(fb);
+    lastSend = millis();
+
+    // ~10 fps max — prevent TCP buffer saturation
+    delay(100);
   }
 
   Serial.println("[STREAM] Client disconnected");
