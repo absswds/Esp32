@@ -770,7 +770,7 @@ async function tTest(type,val){
 var _cooling=false,_heating=false;
 function toggleCam(){
   camEnabled=!camEnabled;
-  fetch('/camenable?on='+(camEnabled?1:0)).then(function(r){return r.json()}).then(function(d){camEnabled=d.camEnabled;
+  fetch('/camenable?on='+(camEnabled?1:0)).then(function(r){return r.json()}).then(function(d){camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
     document.getElementById('camBody').style.display=camEnabled?'':'none';
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     if(camEnabled){camPoll();}
@@ -1030,7 +1030,12 @@ void setup() {
       }
       Serial.printf("[CAM] %s\n", camEnabled ? "enabled" : "disabled");
     }
-    server.send(200, "application/json", String("{\"camEnabled\":") + (camEnabled ? "true" : "false") + "}");
+    String json = "{\"camEnabled\":" + String(camEnabled ? "true" : "false");
+    if (camIPConfirmed) {
+      json += ",\"camIP\":\"" + camIP.toString() + "\"";
+    }
+    json += "}";
+    server.send(200, "application/json", json);
   });
 
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
