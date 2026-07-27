@@ -334,10 +334,17 @@ void handleData() {
     else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
   }
   char buf[800];
-  snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
-    tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax);
+  if (camIPConfirmed) {
+    snprintf(buf, sizeof(buf),
+      "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+      tBuf[0], tBuf[1], tBuf[2], n,
+      fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax);
+  } else {
+    snprintf(buf, sizeof(buf),
+      "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+      tBuf[0], tBuf[1], tBuf[2], n,
+      fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
+  }
   server.send(200, "application/json", buf);
 }
 
@@ -674,7 +681,7 @@ function exportCSV(){
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='';
 function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
-function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,5000);}
+function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';if(camIP){setTimeout(camPoll,5000);}}
 function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
 function toggleIR(){irOn=!irOn;var u=camIP?'http://'+camIP+'/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
