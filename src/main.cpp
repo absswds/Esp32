@@ -32,6 +32,7 @@ SemaphoreHandle_t camMutex = nullptr;
 // Light state cache (IR/LED)
 int lightIR = 0, lightLED = 0;
 SemaphoreHandle_t lightMutex = nullptr;
+IPAddress camIP(192, 168, 4, 2);  // 相機 IP，優先經 mDNS 解析
 
 // Background task: fetch camera frame + light status on core 0
 void camTask(void *arg) {
@@ -113,7 +114,6 @@ unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
 int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防止瞬態雜訊誤觸）
 bool camEnabled = false;       // 相機開關 — 默認關閉
-IPAddress camIP(192, 168, 4, 2);  // 相機 IP，優先經 mDNS 解析
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
