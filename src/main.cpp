@@ -468,21 +468,29 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0a0e14;--sf:#111820;--bd:#1e2a36;--tx:#e0e6ed;--t2:#7a8a9a;--t3:#4a5568;--r:#ef4444;--b:#3b82f6;--g:#22c55e;--a:#eab308;--c:#14b8a6;--o:#f97316}
-body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:12px 16px;max-width:600px;margin:0 auto}
-.hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 0 10px;border-bottom:1px solid var(--bd);margin-bottom:10px}
-.hdr h1{font-size:1.05rem;font-weight:700}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:18px clamp(16px,3vw,42px);max-width:1480px;margin:0 auto;min-height:100dvh}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 16px;border-bottom:1px solid var(--bd);margin-bottom:14px}
+.hdr h1{font-size:clamp(1.05rem,1.5vw,1.3rem);font-weight:750;letter-spacing:-.02em}
 .hdr h1 b{color:var(--c)}
-.conn{display:flex;align-items:center;gap:6px;font-size:.7rem;color:var(--t2)}
-.dot{width:6px;height:6px;border-radius:50%;background:var(--g);flex-shrink:0}
-.dot.err{background:var(--r)}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
-.card{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:10px 4px;text-align:center;position:relative;overflow:hidden}
-.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.conn{display:flex;align-items:center;gap:7px;font-size:.75rem;color:var(--t2);font-variant-numeric:tabular-nums}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--g);flex-shrink:0;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.dot.err{background:var(--r);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:13px 8px;text-align:center;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
 .card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--o)}
-.card .val{font-size:1.15rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
-.card .lbl{font-size:.5rem;color:var(--t3);margin-top:3px;letter-spacing:.3px}
-.sec{background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px}
-.sec h2{font-size:.62rem;color:var(--t3);font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px}
+.card .val{font-size:clamp(1.2rem,2.2vw,1.7rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.045em}
+.card .lbl{font-size:.62rem;color:var(--t2);margin-top:5px;letter-spacing:.04em}
+.dashboard{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,.85fr);gap:14px;align-items:stretch}
+.primary-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px;align-items:stretch}
+.left-col{display:grid;grid-template-rows:1fr auto;gap:10px;min-height:0}
+.bottom-panels{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.control-col{display:grid;gap:10px}
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:0}
+.sec h2{font-size:.68rem;color:var(--t2);font-weight:750;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
+.chart-sec{min-height:300px;display:flex;flex-direction:column}.chart-sec #chart{flex:1;height:auto;min-height:210px}.cam-sec{height:100%}
+.system-sec .btn{margin-bottom:2px}
+.control-col .sec{box-shadow:0 1px 0 rgba(255,255,255,.018)}
 .btn{width:100%;padding:11px;border-radius:6px;border:none;font-size:.85rem;font-weight:700;cursor:pointer;transition:all .15s}
 .btn.on{background:var(--r);color:#fff}
 .btn.off{background:var(--c);color:#000}
@@ -507,13 +515,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 .act-row{display:flex;gap:5px;margin-top:6px}
 .act-btn{flex:1;padding:7px;border-radius:5px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.68rem;font-weight:600;transition:all .15s}
 .act-btn:active{transform:scale(.95);background:rgba(20,184,166,.1);border-color:var(--c);color:var(--c)}
-#chart{width:100%;height:130px;display:block}
-.cam-wrap{position:relative;width:100%;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:4/3}
-.cam-wrap img{width:100%;display:block}
+#chart{width:100%;height:210px;display:block}
+.cam-wrap{position:relative;width:100%;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.cam-wrap img{width:100%;height:100%;display:block;object-fit:cover}
 .cam-off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:.7rem}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-@media(max-width:400px){.grid{grid-template-columns:repeat(3,1fr)}.card .val{font-size:1rem}}
+@media(max-width:900px){body{max-width:760px;padding:14px 16px}.dashboard,.primary-grid{grid-template-columns:1fr}.control-col{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.system-sec{grid-column:1/-1}.chart-sec{min-height:0}#chart{height:170px}}
+@media(max-width:560px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.chart-sec{min-height:0}#chart{height:130px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
@@ -526,7 +536,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   <div class="card cb"><div class="val" id="mRoom">--</div><div class="lbl">活動區</div></div>
   <div class="card cg"><div class="val" id="mVent">--</div><div class="lbl">出風口</div></div>
 </div>
-<div class="sec">
+<div class="dashboard">
+  <div class="primary-grid">
+    <div class="left-col">
+      <div class="sec chart-sec">
   <h2>溫度趨勢</h2>
   <canvas id="chart"></canvas>
   <div class="pills" style="margin-top:2px;margin-bottom:4px">
@@ -539,31 +552,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <button class="act-btn" onclick="clearHist()">清除記錄</button>
   </div>
 </div>
-<div class="sec" id="camSec">
-  <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
-  <div id="camBody" style="display:none">
-    <div class="cam-wrap">
-      <img id="camStream" src="" alt="camera" onload="camOk()" onerror="camErr()">
-      <div class="cam-off" id="camOff" style="display:none">攝像頭離線</div>
-    </div>
-    <div class="pills" style="margin-top:8px">
-      <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
-      <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
-    </div>
-  </div>
-</div>
-<div class="sec">
-  <h2>系統控制</h2>
-  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
-  <div class="pills">
-    <div class="pill sys" id="pSys">待機</div>
-    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
-    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
-  </div>
-  <div class="pills" style="margin-top:6px">
-    <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
-  </div>
-</div>
+<div class="bottom-panels">
 <div class="sec">
   <h2>實驗目標溫度</h2>
   <div class="fld">
@@ -597,6 +586,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
   </div>
   <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
 </div>
+</div>
+    </div>
+    <div class="sec cam-sec" id="camSec">
+  <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
+  <div id="camBody" style="display:none">
+    <div class="cam-wrap">
+      <img id="camStream" src="" alt="camera" onload="camOk()" onerror="camErr()">
+      <div class="cam-off" id="camOff" style="display:none">攝像頭離線</div>
+    </div>
+    <div class="pills" style="margin-top:8px">
+      <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
+      <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
+    </div>
+  </div>
+</div>
+  </div>
+  <div class="control-col">
+<div class="sec system-sec">
+  <h2>系統控制</h2>
+  <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
+  <div class="pills">
+    <div class="pill sys" id="pSys">待機</div>
+    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
+    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
+  </div>
+  <div class="pills" style="margin-top:6px">
+    <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
+  </div>
+</div>
 <div class="sec">
   <h2>風速控制</h2>
   <div class="fld">
@@ -611,6 +629,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <label>間隔秒數</label>
     <input type="range" min="1" max="10" step="1" value="2" id="pollS" oninput="setPoll(this.value)">
     <span class="rv" id="pollV">2s</span>
+  </div>
+</div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
