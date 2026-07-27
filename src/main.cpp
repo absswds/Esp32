@@ -44,7 +44,7 @@ void camTask(void *arg) {
       c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
+      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 2000) break; delay(1); }
       while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
       size_t cl = 0;
       int ci = hdr.indexOf("Content-Length:");
@@ -53,7 +53,7 @@ void camTask(void *arg) {
         uint8_t *buf = (uint8_t*)malloc(cl);
         if (buf) {
           size_t got = 0; t = millis();
-          while (got < cl && (c.connected() || c.available())) { int r = c.read(buf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 3000) break; }
+          while (got < cl && (c.connected() || c.available())) { esp_task_wdt_reset(); int r = c.read(buf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 3000) break; }
           if (got == cl) {
             if (xSemaphoreTake(camMutex, 100)) {
               if (camBuf) free(camBuf);
@@ -71,7 +71,7 @@ void camTask(void *arg) {
       c.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String body;
       uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 1000) break; delay(1); }
+      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 1000) break; delay(1); }
       while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
       while (c.available()) body += (char)c.read();
       c.stop();
@@ -912,7 +912,7 @@ void setup() {
   Serial.printf("[BOOT] 重置原因: %s (reason=%d)\n", (ri >= 0 && ri < 10) ? reasons[ri] : "未知", reason);
 
   // #22 看門狗：3 秒超時自動重啟
-  esp_task_wdt_init(3, true);
+  esp_task_wdt_init(7, true);
   esp_task_wdt_add(NULL);
 
   Serial.printf("GPIO%d, 3× DS18B20: 巢穴/活動/出風\n", DS18B20_PIN);
@@ -989,7 +989,7 @@ void setup() {
       c.printf("GET %s HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n", path.c_str());
       String body;
       uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 2000) break; delay(1); }
+      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 2000) break; delay(1); }
       while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
       while (c.available()) body += (char)c.read();
       c.stop();
@@ -1057,7 +1057,7 @@ void loop() {
       c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
       String hdr;
       uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { if (millis() - t > 1500) break; delay(1); }
+      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 1500) break; delay(1); }
       while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
       size_t cl = 0;
       int ci = hdr.indexOf("Content-Length:");
@@ -1067,7 +1067,7 @@ void loop() {
         camBuf = (uint8_t*)malloc(cl);
         if (camBuf) {
           size_t got = 0; t = millis();
-          while (got < cl && (c.connected() || c.available())) { int r = c.read(camBuf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 2000) break; }
+          while (got < cl && (c.connected() || c.available())) { esp_task_wdt_reset(); int r = c.read(camBuf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 2000) break; }
           camLen = (got == cl) ? cl : 0;
           if (camLen == 0) { free(camBuf); camBuf = nullptr; }
         }
@@ -1078,7 +1078,7 @@ void loop() {
         c2.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
         String body;
         uint32_t t2 = millis();
-        while (c2.connected() && c2.available() == 0) { if (millis() - t2 > 500) break; delay(1); }
+        while (c2.connected() && c2.available() == 0) { esp_task_wdt_reset(); if (millis() - t2 > 500) break; delay(1); }
         while (c2.available()) { String l = c2.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
         while (c2.available()) body += (char)c2.read();
         c2.stop();
