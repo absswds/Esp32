@@ -111,6 +111,7 @@ bool convPending = false;
 unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
 int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防止瞬態雜訊誤觸）
+bool camEnabled = false;       // 相機開關 — 默認關閉
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -799,7 +800,6 @@ unsigned long camLastFetch = 0;
 unsigned long lightLastFetch = 0;
 bool camOffline = true;       // start assuming camera is offline
 unsigned long camInterval = 10000;  // first retry in 10s
-bool camEnabled = false;       // user toggle — off by default
 
 void updateOLED() {
   u8g2.firstPage();
