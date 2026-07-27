@@ -114,6 +114,8 @@ unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
 int nanCount = 0;          // 連續 NAN 次數，達 3 次才緊急停止（防止瞬態雜訊誤觸）
 bool camEnabled = false;       // 相機開關 — 默認關閉
+bool camIPConfirmed = false;    // mDNS 確認過相機 IP
+unsigned long lastCamResolve = 0;
 
 // 安全保護閾值
 float safeMin = 5.0;      // 巢穴最低溫（動物安全）
@@ -951,6 +953,7 @@ void setup() {
       IPAddress resolved = MDNS.queryHost("esp32-cam");
       if (resolved != INADDR_NONE) {
         camIP = resolved;
+        camIPConfirmed = true;
         Serial.printf("[MDNS] esp32-cam → %s\n", camIP.toString().c_str());
       } else {
         Serial.printf("[MDNS] esp32-cam not found, using %s\n", camIP.toString().c_str());
@@ -980,7 +983,7 @@ void setup() {
   server.on("/light", []() {
     // Apply changes first (blocking, ~100ms, acceptable since user clicked)
     WiFiClient c;
-    if (c.connect(camIP, 80, 2000)) {
+    if (c.connect(camIP, 80, camIPConfirmed ? 1000 : 200)) {
       String q = "";
       if (server.hasArg("ir"))  q += "ir=" + server.arg("ir");
       if (server.hasArg("led")) { if (q.length()) q += "&"; q += "led=" + server.arg("led"); }
@@ -1092,6 +1095,18 @@ void loop() {
         camInterval = 10000;
         Serial.println("[CAM] camIP offline, retry in 10s");
       }
+    }
+  }
+
+  // 定期重查相機 IP（如果 mDNS 還沒確認或用了一段時間）
+  if (!camIPConfirmed || millis() - lastCamResolve > 60000) {
+    if (MDNS.queryHost("esp32-cam") != INADDR_NONE) {
+      camIP = MDNS.queryHost("esp32-cam");
+      camIPConfirmed = true;
+      lastCamResolve = millis();
+      Serial.printf("[LOOP] Re-resolved camIP → %s\n", camIP.toString().c_str());
+    } else if (millis() - lastCamResolve > 60000) {
+      lastCamResolve = millis();
     }
   }
 }
