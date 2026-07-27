@@ -677,8 +677,8 @@ function camOk(){var i=document.getElementById('camStream');i.style.display='';d
 function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,5000);}
 function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
-function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
-function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
+function toggleIR(){irOn=!irOn;var u=camIP?'http://'+camIP+'/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
+function toggleLED(){ledOn=!ledOn;var u=camIP?'http://'+camIP+'/light?led='+(ledOn?1:0):'/light?led='+(ledOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
@@ -954,6 +954,7 @@ void setup() {
       if (resolved != INADDR_NONE) {
         camIP = resolved;
         camIPConfirmed = true;
+        lastCamResolve = millis();
         Serial.printf("[MDNS] esp32-cam → %s\n", camIP.toString().c_str());
       } else {
         Serial.printf("[MDNS] esp32-cam not found, using %s\n", camIP.toString().c_str());
@@ -1098,15 +1099,14 @@ void loop() {
     }
   }
 
-  // 定期重查相機 IP（如果 mDNS 還沒確認或用了一段時間）
-  if (!camIPConfirmed || millis() - lastCamResolve > 60000) {
+  // 定期重查相機 IP
+  unsigned long resolveInterval = camIPConfirmed ? 60000 : 5000;
+  if (millis() - lastCamResolve >= resolveInterval) {
+    lastCamResolve = millis();
     if (MDNS.queryHost("esp32-cam") != INADDR_NONE) {
       camIP = MDNS.queryHost("esp32-cam");
       camIPConfirmed = true;
-      lastCamResolve = millis();
-      Serial.printf("[LOOP] Re-resolved camIP → %s\n", camIP.toString().c_str());
-    } else if (millis() - lastCamResolve > 60000) {
-      lastCamResolve = millis();
+      Serial.printf("[LOOP] Resolved camIP → %s\n", camIP.toString().c_str());
     }
   }
 }

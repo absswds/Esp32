@@ -122,7 +122,8 @@ static esp_err_t status_handler(httpd_req_t *req) {
 static void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
-  config.max_uri_handlers = 8;
+  config.max_open_sockets = 10;     // 支援多客戶端同時串流
+  config.max_uri_handlers = 10;
   config.lru_purge_enable = true;
 
   // Stream URI (priority)
