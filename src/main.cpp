@@ -991,7 +991,11 @@ void setup() {
   });
 
   server.on("/light", []() {
-    // Apply changes first (blocking, ~100ms, acceptable since user clicked)
+    // 樂觀更新：先根據請求設定本地狀態，保證即時響應
+    if (server.hasArg("ir"))  lightIR  = server.arg("ir").toInt();
+    if (server.hasArg("led")) lightLED = server.arg("led").toInt();
+
+    // 盡力同步到相機（阻塞但不會影響按鈕響應）
     WiFiClient c;
     if (c.connect(camIP, 80, camIPConfirmed ? 1000 : 200)) {
       String q = "";
@@ -1005,14 +1009,13 @@ void setup() {
       while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
       while (c.available()) body += (char)c.read();
       c.stop();
-      // Parse JSON {"ir":0,"led":0}
+      // Parse JSON for confirmation (optional)
       int irPos = body.indexOf("\"ir\":");
       if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
       int ledPos = body.indexOf("\"led\":");
       if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
-      lightLastFetch = millis();
     }
-    // Return cached state instantly
+    // 返回本地快取狀態（即使用戶要求的值）
     String json = "{\"ir\":" + String(lightIR) + ",\"led\":" + String(lightLED) + "}";
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "application/json", json);
