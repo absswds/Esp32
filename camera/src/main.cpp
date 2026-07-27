@@ -165,6 +165,28 @@ static void startCameraServer() {
   }
 }
 
+static void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+  WiFi.begin(AP_SSID, AP_PASS);
+  Serial.printf("[WiFi] Connecting to %s", AP_SSID);
+  for (int tries = 0; tries < 40; tries++) {
+    if (WiFi.status() == WL_CONNECTED) break;
+    delay(500);
+    Serial.print(".");
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
+    if (server) {
+      httpd_stop(server);
+      server = NULL;
+    }
+    startCameraServer();
+    MDNS.begin("esp32-cam");
+  } else {
+    Serial.println("\n[WiFi] FAILED — will retry in loop()");
+  }
+}
+
 // ================== Setup ==================
 
 void setup() {
@@ -233,23 +255,8 @@ void setup() {
 
   // WiFi
   WiFi.setHostname("esp32-cam");
-  WiFi.setSleep(false);                    // 防止 WiFi 休眠導致卡頓
-  WiFi.begin(AP_SSID, AP_PASS);
-  Serial.printf("[WiFi] Connecting to %s", AP_SSID);
-  for (int tries = 0; tries < 40; tries++) {
-    if (WiFi.status() == WL_CONNECTED) break;
-    delay(500);
-    Serial.print(".");
-  }
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\n[WiFi] FAILED");
-    return;
-  }
-  Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
-
-  if (MDNS.begin("esp32-cam")) {
-    Serial.println("[MDNS] esp32-cam.local ready");
-  }
+  WiFi.setSleep(false);
+  connectWiFi();
 
   // IR / LED 初始關閉
   pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
@@ -258,7 +265,11 @@ void setup() {
   startCameraServer();
 }
 
-// loop — 什麼都不做，esp_http_server 自行處理
+// loop — 檢查 WiFi 狀態，離線時自動重連
 void loop() {
-  delay(10000);
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[LOOP] WiFi lost, reconnecting...");
+    connectWiFi();
+  }
+  delay(5000);
 }
