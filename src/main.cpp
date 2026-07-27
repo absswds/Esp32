@@ -672,7 +672,7 @@ function exportCSV(){
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='';
 var camBusy=false;
-function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,300);}
+function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,50);}
 function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,2000);}
 function camPoll(){if(camBusy)return;camBusy=true;var url=camIP?'http://'+camIP+'/capture':'/cam?r='+Date.now();document.getElementById('camStream').src=url;}
 if(camEnabled)camPoll();
