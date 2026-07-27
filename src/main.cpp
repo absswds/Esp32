@@ -330,9 +330,9 @@ void handleData() {
   }
   char buf[700];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", targetTemp, hysteresis, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
 
@@ -534,15 +534,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
     <button class="act-btn" onclick="clearHist()">清除記錄</button>
   </div>
 </div>
-<div class="sec">
-  <h2>即時影像</h2>
-  <div class="cam-wrap">
-    <img id="camStream" src="/cam" alt="camera" onload="camOk()" onerror="camErr()">
-    <div class="cam-off" id="camOff" style="display:none">攝像頭離線 — 檢查 ESP32-S3 是否已連線</div>
-  </div>
-  <div class="pills" style="margin-top:8px">
-    <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
-    <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
+<div class="sec" id="camSec">
+  <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
+  <div id="camBody" style="display:none">
+    <div class="cam-wrap">
+      <img id="camStream" src="/cam" alt="camera" onload="camOk()" onerror="camErr()">
+      <div class="cam-off" id="camOff" style="display:none">攝像頭離線</div>
+    </div>
+    <div class="pills" style="margin-top:8px">
+      <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
+      <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
+    </div>
   </div>
 </div>
 <div class="sec">
@@ -608,7 +610,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000;
+var H=[],M=600,allData=[],ms=2000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false;
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -670,7 +672,7 @@ var camBusy=false;
 function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,1500);}
 function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,3000);}
 function camPoll(){if(camBusy)return;camBusy=true;document.getElementById('camStream').src='/cam?r='+Date.now();}
-camPoll();
+if(camEnabled)camPoll();
 function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
 function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
@@ -711,6 +713,10 @@ async function doPoll(){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
+    // Sync camera state from server
+    camEnabled=d.camEnabled;
+    document.getElementById('camBody').style.display=camEnabled?'':'none';
+    document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
@@ -749,8 +755,16 @@ async function tTest(type,val){
   try{var url=type==='cool'?'/test?cool='+val+'&heat=0&en=1':'/test?heat='+val+'&cool=0&en=1';await fetch(url);}catch(e){}
 }
 var _cooling=false,_heating=false;
-function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;tTest('cool',200);}else{tTest('cool',0);}}
-function toggleHeat(){_heating=!_heating;if(_heating){_cooling=false;tTest('heat',200);}else{tTest('heat',0);}}
+function toggleCam(){
+  camEnabled=!camEnabled;
+  fetch('/camenable?on='+(camEnabled?1:0)).then(function(r){return r.json()}).then(function(d){camEnabled=d.camEnabled;
+    document.getElementById('camBody').style.display=camEnabled?'':'none';
+    document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
+    if(camEnabled){camPoll();}
+  });
+}
+function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;fetch('/control?manual=1',{method:'POST'});tTest('cool',200);}else{tTest('cool',0);}}
+function toggleHeat(){_heating=!_heating;if(_heating){_cooling=false;fetch('/control?manual=1',{method:'POST'});tTest('heat',200);}else{tTest('heat',0);}}
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
 function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
 function setChart(v){
@@ -785,6 +799,7 @@ unsigned long camLastFetch = 0;
 unsigned long lightLastFetch = 0;
 bool camOffline = true;       // start assuming camera is offline
 unsigned long camInterval = 10000;  // first retry in 10s
+bool camEnabled = false;       // user toggle — off by default
 
 void updateOLED() {
   u8g2.firstPage();
@@ -962,6 +977,21 @@ void setup() {
     server.send(200, "application/json", json);
   });
 
+  // Camera enable/disable toggle
+  server.on("/camenable", []() {
+    if (server.hasArg("on")) {
+      camEnabled = server.arg("on").toInt() == 1;
+      if (camEnabled) {
+        // Reset backoff so polling starts promptly
+        camLastFetch = 0;
+        camInterval = 2000;
+        camOffline = false;
+      }
+      Serial.printf("[CAM] %s\n", camEnabled ? "enabled" : "disabled");
+    }
+    server.send(200, "application/json", String("{\"camEnabled\":") + (camEnabled ? "true" : "false") + "}");
+  });
+
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
   server.begin();
   Serial.println("[Server] OK\n");
@@ -989,8 +1019,51 @@ void loop() {
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 
-  // Camera + light are served on-demand via /cam and /light.
-  // No background polling needed — the ESP32-S3 camera MCU (192.168.4.2)
-  // is a separate system; when offline, endpoints return 502 gracefully.
-  // Background polling only blocks server.handleClient() — removed.
+  // Camera background polling — only runs when user enables camera in UI
+  if (camEnabled && millis() - camLastFetch >= camInterval) { camLastFetch = millis();
+    WiFiClient c;
+    if (c.connect("192.168.4.2", 80, 500)) {
+      camOffline = false;
+      camInterval = 2000;
+      c.print("GET /capture HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+      String hdr;
+      uint32_t t = millis();
+      while (c.connected() && c.available() == 0) { if (millis() - t > 1500) break; delay(1); }
+      while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
+      size_t cl = 0;
+      int ci = hdr.indexOf("Content-Length:");
+      if (ci >= 0) cl = hdr.substring(ci + 15).toInt();
+      if (cl > 0 && cl < 80000) {
+        if (camBuf) free(camBuf);
+        camBuf = (uint8_t*)malloc(cl);
+        if (camBuf) {
+          size_t got = 0; t = millis();
+          while (got < cl && (c.connected() || c.available())) { int r = c.read(camBuf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 2000) break; }
+          camLen = (got == cl) ? cl : 0;
+          if (camLen == 0) { free(camBuf); camBuf = nullptr; }
+        }
+      }
+      c.stop();
+      // Light status — bundled with camera since they share the same MCU
+      { WiFiClient c2; if (c2.connect("192.168.4.2", 80, 500)) {
+        c2.print("GET /status HTTP/1.1\r\nHost: 192.168.4.2\r\nConnection: close\r\n\r\n");
+        String body;
+        uint32_t t2 = millis();
+        while (c2.connected() && c2.available() == 0) { if (millis() - t2 > 500) break; delay(1); }
+        while (c2.available()) { String l = c2.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
+        while (c2.available()) body += (char)c2.read();
+        c2.stop();
+        int irPos = body.indexOf("\"ir\":");
+        if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
+        int ledPos = body.indexOf("\"led\":");
+        if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
+      } }  // close if-body + scope
+    } else {
+      if (!camOffline) {
+        camOffline = true;
+        camInterval = 10000;
+        Serial.println("[CAM] 192.168.4.2 offline, retry in 10s");
+      }
+    }
+  }
 }
