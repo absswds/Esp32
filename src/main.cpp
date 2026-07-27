@@ -550,10 +550,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;backgroun
       <button class="act-btn" id="irBtn" onclick="toggleIR()">IR 補光</button>
       <button class="act-btn" id="ledBtn" onclick="toggleLED()">LED 白光</button>
     </div>
-    <div style="display:flex;gap:4px;margin-top:6px;align-items:center">
-      <input id="camIPInput" type="text" placeholder="相機 IP" style="flex:1;padding:2px 6px;font-size:.7rem">
-      <button class="act-btn" onclick="setCamIP()" style="padding:2px 8px;font-size:.7rem">設定</button>
-    </div>
   </div>
 </div>
 <div class="sec">
@@ -681,7 +677,6 @@ function camOk(){var i=document.getElementById('camStream');i.style.display='';d
 function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';if(camIP){setTimeout(camPoll,5000);}}
 function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
-function setCamIP(){var v=document.getElementById('camIPInput').value.trim();if(!v){toast('請輸入 IP');return;}fetch('/setcamip?ip='+v).then(function(r){return r.json()}).then(function(d){if(d.ok){camIP=v;toast('相機 IP 已設定: '+v);if(camEnabled)camPoll();document.getElementById('camIPInput').value=v;}}).catch(function(e){toast('設定失敗');});}
 function toggleIR(){irOn=!irOn;var u=camIP?'http://'+camIP+'/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
 function toggleLED(){ledOn=!ledOn;var u=camIP?'http://'+camIP+'/light?led='+(ledOn?1:0):'/light?led='+(ledOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
@@ -722,8 +717,7 @@ async function doPoll(){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
-    // Sync camera state from server
-    camEnabled=d.camEnabled;if(d.camIP){camIP=d.camIP;document.getElementById('camIPInput').value=d.camIP;}
+    camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
     // 串流時減少輪詢帶寬競爭
     var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
     document.getElementById('camBody').style.display=camEnabled?'':'none';
@@ -1037,23 +1031,6 @@ void setup() {
     }
     json += "}";
     server.send(200, "application/json", json);
-  });
-
-  server.on("/setcamip", []() {
-    if (server.hasArg("ip")) {
-      IPAddress newIP;
-      if (newIP.fromString(server.arg("ip"))) {
-        camIP = newIP;
-        camIPConfirmed = true;
-        lastCamResolve = millis();
-        server.send(200, "application/json", "{\"ok\":true}");
-        Serial.printf("[CAM] Manual IP set: %s\n", camIP.toString().c_str());
-      } else {
-        server.send(200, "application/json", "{\"ok\":false}");
-      }
-    } else {
-      server.send(200, "application/json", "{\"ok\":false}");
-    }
   });
 
   server.onNotFound([]() { server.send(404, "text/plain", "404"); });
