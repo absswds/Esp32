@@ -25,66 +25,9 @@ OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
 WebServer server(80);
 
-// Camera frame cache — fetched by FreeRTOS task, served instantly
-uint8_t *camBuf = nullptr;
-size_t camLen = 0;
-SemaphoreHandle_t camMutex = nullptr;
 // Light state cache (IR/LED)
 int lightIR = 0, lightLED = 0;
-SemaphoreHandle_t lightMutex = nullptr;
 IPAddress camIP(192, 168, 4, 2);  // 相機 IP，優先經 mDNS 解析
-
-// Background task: fetch camera frame + light status on core 0
-void camTask(void *arg) {
-  for (;;) {
-    delay(2000);  // 2s interval, task delay (not blocking loop)
-    WiFiClient c;
-    if (c.connect(camIP, 80, 2000)) {
-      // Fetch frame
-      c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
-      String hdr;
-      uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 2000) break; delay(1); }
-      while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
-      size_t cl = 0;
-      int ci = hdr.indexOf("Content-Length:");
-      if (ci >= 0) cl = hdr.substring(ci + 15).toInt();
-      if (cl > 0 && cl < 80000) {
-        uint8_t *buf = (uint8_t*)malloc(cl);
-        if (buf) {
-          size_t got = 0; t = millis();
-          while (got < cl && (c.connected() || c.available())) { esp_task_wdt_reset(); int r = c.read(buf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 3000) break; }
-          if (got == cl) {
-            if (xSemaphoreTake(camMutex, 100)) {
-              if (camBuf) free(camBuf);
-              camBuf = buf; camLen = cl;
-              xSemaphoreGive(camMutex);
-            } else { free(buf); }
-          } else { free(buf); }
-        }
-      }
-      c.stop();
-    }
-    delay(100);
-    // Fetch light status
-    if (c.connect(camIP, 80, 1000)) {
-      c.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
-      String body;
-      uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 1000) break; delay(1); }
-      while (c.available()) { String l = c.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
-      while (c.available()) body += (char)c.read();
-      c.stop();
-      int irPos = body.indexOf("\"ir\":");
-      int ledPos = body.indexOf("\"led\":");
-      if (xSemaphoreTake(lightMutex, 100)) {
-        if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
-        if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
-        xSemaphoreGive(lightMutex);
-      }
-    }
-  }
-}
 U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, /* reset= */ U8X8_PIN_NONE);
 
 // 三顆 DS18B20 — ROM 位址認人，不靠匯流排順序
@@ -741,8 +684,6 @@ async function doPoll(){
     allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
     if(allData.length>ALLDATA_MAX)allData.shift();
     dC();
-    // Sync IR/LED buttons across clients
-    fetch('/light').then(function(r){return r.json()}).then(function(l){irOn=!!l.ir;ledOn=!!l.led;document.getElementById('irBtn').style.background=irOn?'#f59e0b':'';document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':'';}).catch(function(){});
   }catch(e){
     document.getElementById('st').textContent='更新失敗';
     document.getElementById('dot').className='dot err';
@@ -813,10 +754,6 @@ poll();
 </html>)HTML";
 
 unsigned long lastOled = 0;
-unsigned long camLastFetch = 0;
-unsigned long lightLastFetch = 0;
-bool camOffline = true;       // start assuming camera is offline
-unsigned long camInterval = 10000;  // first retry in 10s
 
 void updateOLED() {
   u8g2.firstPage();
@@ -986,15 +923,6 @@ void setup() {
   server.on("/control", HTTP_POST, handleControl);
   server.on("/test", handleTest);
 
-  // Camera proxy — serve cached frame (instant, non-blocking)
-  server.on("/cam", []() {
-    if (camBuf && camLen > 0) {
-      server.send_P(200, "image/jpeg", (const char*)camBuf, camLen);
-    } else {
-      server.send(502, "text/plain", "cam offline");
-    }
-  });
-
   server.on("/light", []() {
     // 樂觀更新：先根據請求設定本地狀態，保證即時響應
     if (server.hasArg("ir"))  lightIR  = server.arg("ir").toInt();
@@ -1031,10 +959,7 @@ void setup() {
     if (server.hasArg("on")) {
       camEnabled = server.arg("on").toInt() == 1;
       if (camEnabled) {
-        // 瀏覽器直連串流，背景輪詢降為每 30 秒一次（僅供 /cam 降級備用）
-        camLastFetch = 0;
-        camInterval = 30000;
-        camOffline = false;
+        Serial.println("[CAM] enabled: browser connects directly to camera stream");
       }
       Serial.printf("[CAM] %s\n", camEnabled ? "enabled" : "disabled");
     }
@@ -1072,54 +997,6 @@ void loop() {
   if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
-
-  // Camera background polling — only runs when user enables camera in UI
-  if (camEnabled && millis() - camLastFetch >= camInterval) { camLastFetch = millis();
-    WiFiClient c;
-    if (c.connect(camIP, 80, 500)) {
-      camOffline = false;
-      camInterval = 30000;
-      c.print("GET /capture HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
-      String hdr;
-      uint32_t t = millis();
-      while (c.connected() && c.available() == 0) { esp_task_wdt_reset(); if (millis() - t > 1500) break; delay(1); }
-      while (c.available()) { String l = c.readStringUntil('\n'); hdr += l; if (l == "\r") break; if (l.length() == 0) break; }
-      size_t cl = 0;
-      int ci = hdr.indexOf("Content-Length:");
-      if (ci >= 0) cl = hdr.substring(ci + 15).toInt();
-      if (cl > 0 && cl < 80000) {
-        if (camBuf) free(camBuf);
-        camBuf = (uint8_t*)malloc(cl);
-        if (camBuf) {
-          size_t got = 0; t = millis();
-          while (got < cl && (c.connected() || c.available())) { esp_task_wdt_reset(); int r = c.read(camBuf + got, cl - got); if (r > 0) got += r; else delay(1); if (millis() - t > 2000) break; }
-          camLen = (got == cl) ? cl : 0;
-          if (camLen == 0) { free(camBuf); camBuf = nullptr; }
-        }
-      }
-      c.stop();
-      // Light status — bundled with camera since they share the same MCU
-      { WiFiClient c2; if (c2.connect(camIP, 80, 500)) {
-        c2.print("GET /status HTTP/1.1\r\nHost: esp32-cam\r\nConnection: close\r\n\r\n");
-        String body;
-        uint32_t t2 = millis();
-        while (c2.connected() && c2.available() == 0) { esp_task_wdt_reset(); if (millis() - t2 > 500) break; delay(1); }
-        while (c2.available()) { String l = c2.readStringUntil('\n'); if (l == "\r" || l.length() == 0) break; }
-        while (c2.available()) body += (char)c2.read();
-        c2.stop();
-        int irPos = body.indexOf("\"ir\":");
-        if (irPos >= 0) lightIR = body.substring(irPos + 5).toInt();
-        int ledPos = body.indexOf("\"led\":");
-        if (ledPos >= 0) lightLED = body.substring(ledPos + 6).toInt();
-      } }  // close if-body + scope
-    } else {
-      if (!camOffline) {
-        camOffline = true;
-        camInterval = 10000;
-        Serial.println("[CAM] camIP offline, retry in 10s");
-      }
-    }
-  }
 
   // 定期重查相機 IP
   unsigned long resolveInterval = camIPConfirmed ? 60000 : 5000;

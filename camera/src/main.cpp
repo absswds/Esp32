@@ -45,12 +45,15 @@ static constexpr uint16_t HTTP_TASK_PERIOD_MS = 50;
 static WebServer server(80);
 static QueueHandle_t streamingClients = nullptr;
 static SemaphoreHandle_t frameMutex = nullptr;
+static portMUX_TYPE clientCountMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t cameraTaskHandle = nullptr;
 static TaskHandle_t streamTaskHandle = nullptr;
 
 // Double-buffered, copied JPEG frames. Only camera_capture_task calls esp_camera_fb_get().
 static uint8_t *frameBuffers[2] = {nullptr, nullptr};
 static size_t frameCapacities[2] = {0, 0};
+static uint8_t *broadcastBuffer = nullptr;
+static size_t broadcastCapacity = 0;
 static const uint8_t *activeFrame = nullptr;
 static size_t activeFrameSize = 0;
 static uint8_t writeBufferIndex = 0;
@@ -70,14 +73,15 @@ static void camera_capture_task(void *parameter);
 static void stream_broadcast_task(void *parameter);
 static void http_server_task(void *parameter);
 static void handleStream();
-static void handleCapture();
 static void handleLight();
 static void handleStatus();
 static void handleHealth();
 static void handleRoot();
 static void connectWiFi();
 static bool ensureFrameCapacity(uint8_t index, size_t required);
-static void resumeStreamingTasks();
+static bool ensureBroadcastCapacity(size_t required);
+static bool reserveClientSlot();
+static void releaseClientSlot();
 
 static bool ensureFrameCapacity(uint8_t index, size_t required) {
   if (required <= frameCapacities[index]) return true;
@@ -96,14 +100,42 @@ static bool ensureFrameCapacity(uint8_t index, size_t required) {
   return true;
 }
 
-static void resumeStreamingTasks() {
-  if (cameraTaskHandle && eTaskGetState(cameraTaskHandle) == eSuspended) vTaskResume(cameraTaskHandle);
-  if (streamTaskHandle && eTaskGetState(streamTaskHandle) == eSuspended) vTaskResume(streamTaskHandle);
+static bool ensureBroadcastCapacity(size_t required) {
+  if (required <= broadcastCapacity) return true;
+
+  size_t nextCapacity = required + required / 4;
+  uint8_t *next = static_cast<uint8_t *>(ps_malloc(nextCapacity));
+  if (!next) {
+    Serial.printf("[CAM] Broadcast buffer allocation failed: %u bytes\n", static_cast<unsigned>(nextCapacity));
+    return false;
+  }
+  free(broadcastBuffer);
+  broadcastBuffer = next;
+  broadcastCapacity = nextCapacity;
+  Serial.printf("[CAM] Broadcast buffer allocated: %u bytes\n", static_cast<unsigned>(nextCapacity));
+  return true;
+}
+
+static bool reserveClientSlot() {
+  bool reserved = false;
+  portENTER_CRITICAL(&clientCountMux);
+  if (activeClientCount < MAX_STREAM_CLIENTS) {
+    ++activeClientCount;
+    reserved = true;
+  }
+  portEXIT_CRITICAL(&clientCountMux);
+  return reserved;
+}
+
+static void releaseClientSlot() {
+  portENTER_CRITICAL(&clientCountMux);
+  if (activeClientCount > 0) --activeClientCount;
+  portEXIT_CRITICAL(&clientCountMux);
 }
 
 // /stream only retains the client and returns. It never captures or sends frames itself.
 static void handleStream() {
-  if (!streamingClients || uxQueueSpacesAvailable(streamingClients) == 0) {
+  if (!streamingClients || !reserveClientSlot()) {
     server.send(503, "text/plain", "Stream viewer limit reached");
     return;
   }
@@ -111,35 +143,21 @@ static void handleStream() {
   WiFiClient *client = new WiFiClient(server.client());
   if (!client || !client->connected()) {
     delete client;
+    releaseClientSlot();
     server.send(503, "text/plain", "Unable to open stream");
     return;
   }
 
-  client->write(reinterpret_cast<const uint8_t *>(STREAM_HEADER), strlen(STREAM_HEADER));
-  client->write(reinterpret_cast<const uint8_t *>(STREAM_BOUNDARY), strlen(STREAM_BOUNDARY));
-
-  if (xQueueSend(streamingClients, &client, 0) != pdPASS) {
+  if (client->write(reinterpret_cast<const uint8_t *>(STREAM_HEADER), strlen(STREAM_HEADER)) != strlen(STREAM_HEADER) ||
+      client->write(reinterpret_cast<const uint8_t *>(STREAM_BOUNDARY), strlen(STREAM_BOUNDARY)) != strlen(STREAM_BOUNDARY) ||
+      xQueueSend(streamingClients, &client, 0) != pdPASS) {
     client->stop();
     delete client;
-    server.send(503, "text/plain", "Stream viewer limit reached");
+    releaseClientSlot();
     return;
   }
 
-  activeClientCount = uxQueueMessagesWaiting(streamingClients);
   Serial.printf("[STREAM] Client added; active=%u\n", activeClientCount);
-  resumeStreamingTasks();
-}
-
-static void handleCapture() {
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) {
-    server.send(503, "text/plain", "Camera capture failed");
-    return;
-  }
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Cache-Control", "no-store");
-  server.send_P(200, "image/jpeg", reinterpret_cast<const char *>(fb->buf), fb->len);
-  esp_camera_fb_return(fb);
 }
 
 static void sendLightJson() {
@@ -168,7 +186,7 @@ static void handleHealth() {
 }
 
 static void handleRoot() {
-  server.send(200, "text/plain", "ESP32-S3 camera online. Use /stream, /capture, /health");
+  server.send(200, "text/plain", "ESP32-S3 camera online. Use /stream, /health");
 }
 
 static void http_server_task(void *parameter) {
@@ -181,13 +199,12 @@ static void http_server_task(void *parameter) {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/stream", HTTP_GET, handleStream);
-  server.on("/capture", HTTP_GET, handleCapture);
   server.on("/light", HTTP_GET, handleLight);
   server.on("/status", HTTP_GET, handleStatus);
   server.on("/health", HTTP_GET, handleHealth);
   server.onNotFound([]() { server.send(404, "text/plain", "This URI does not exist"); });
   server.begin();
-  Serial.println("[HTTP] WebServer ready: /stream /capture /light /status /health");
+  Serial.println("[HTTP] WebServer ready: /stream /light /status /health");
 
   TickType_t lastWake = xTaskGetTickCount();
   for (;;) {
@@ -203,7 +220,7 @@ static void camera_capture_task(void *parameter) {
 
   for (;;) {
     if (!streamingClients || uxQueueMessagesWaiting(streamingClients) == 0) {
-      vTaskSuspend(nullptr);
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
@@ -235,7 +252,7 @@ static void stream_broadcast_task(void *parameter) {
 
   for (;;) {
     if (!streamingClients || uxQueueMessagesWaiting(streamingClients) == 0 || !cameraReady) {
-      vTaskSuspend(nullptr);
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
@@ -246,29 +263,32 @@ static void stream_broadcast_task(void *parameter) {
     }
 
     bool keep = client->connected();
+    size_t size = 0;
     if (keep) {
       xSemaphoreTake(frameMutex, portMAX_DELAY);
-      const uint8_t *frame = activeFrame;
-      const size_t size = activeFrameSize;
+      if (activeFrame && activeFrameSize > 0 && ensureBroadcastCapacity(activeFrameSize)) {
+        size = activeFrameSize;
+        memcpy(broadcastBuffer, activeFrame, size);
+      }
+      xSemaphoreGive(frameMutex);
+
       char lengthLine[24];
       snprintf(lengthLine, sizeof(lengthLine), "%u\r\n\r\n", static_cast<unsigned>(size));
-
-      if (!frame || size == 0 ||
+      if (size == 0 ||
           client->write(reinterpret_cast<const uint8_t *>(STREAM_CONTENT_TYPE), strlen(STREAM_CONTENT_TYPE)) != strlen(STREAM_CONTENT_TYPE) ||
           client->write(reinterpret_cast<const uint8_t *>(lengthLine), strlen(lengthLine)) != strlen(lengthLine) ||
-          client->write(frame, size) != size ||
+          client->write(broadcastBuffer, size) != size ||
           client->write(reinterpret_cast<const uint8_t *>(STREAM_BOUNDARY), strlen(STREAM_BOUNDARY)) != strlen(STREAM_BOUNDARY)) {
         keep = false;
       }
-      xSemaphoreGive(frameMutex);
     }
 
-    if (keep && client->connected()) {
-      xQueueSend(streamingClients, &client, 0);
+    if (keep && client->connected() && xQueueSend(streamingClients, &client, 0) == pdPASS) {
+      // Slot stays reserved while the client is queued or being sent.
     } else {
       client->stop();
       delete client;
-      activeClientCount = uxQueueMessagesWaiting(streamingClients);
+      releaseClientSlot();
       Serial.printf("[STREAM] Client dropped; active=%u\n", activeClientCount);
     }
 
@@ -299,6 +319,12 @@ void setup() {
   delay(500);
   Serial.println("\n[CAM] ESP32-S3 multi-client camera booting");
 
+  if (!psramFound()) {
+    Serial.println("[CAM] PSRAM is required for multi-client streaming; check the DFR1154 board definition");
+    return;
+  }
+  Serial.printf("[CAM] PSRAM ready: %u bytes\n", static_cast<unsigned>(ESP.getPsramSize()));
+
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -323,15 +349,8 @@ void setup() {
   config.grab_mode = CAMERA_GRAB_LATEST;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.fb_count = 2;
-  config.frame_size = FRAMESIZE_UXGA;
+  config.frame_size = FRAMESIZE_QVGA;
   config.jpeg_quality = 20;
-
-  if (!psramFound()) {
-    config.frame_size = FRAMESIZE_QVGA;
-    config.fb_location = CAMERA_FB_IN_DRAM;
-    config.fb_count = 1;
-    Serial.println("[CAM] No PSRAM; QVGA DRAM fallback");
-  }
 
   if (esp_camera_init(&config) != ESP_OK) {
     Serial.println("[CAM] Camera init failed");
