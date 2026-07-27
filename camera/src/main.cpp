@@ -128,6 +128,21 @@ void setup() {
     server.send(200, "text/html", html);
   });
 
+  // MJPEG stream — keeps connection open, pushes frames continuously
+  server.on("/stream", HTTP_GET, []() {
+    WiFiClient client = server.client();
+    client.setTimeout(5);
+    client.print("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nAccess-Control-Allow-Origin: *\r\n\r\n");
+    while (client.connected()) {
+      camera_fb_t *fb = esp_camera_fb_get();
+      if (!fb) { delay(5); continue; }
+      client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
+      client.write(fb->buf, fb->len);
+      client.print("\r\n");
+      esp_camera_fb_return(fb);
+    }
+  });
+
   // Single-frame capture (non-blocking, supports multiple clients)
   server.on("/capture", HTTP_GET, []() {
     server.sendHeader("Access-Control-Allow-Origin", "*");

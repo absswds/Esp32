@@ -671,10 +671,9 @@ function exportCSV(){
 }
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='';
-var camBusy=false;
-function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';camBusy=false;setTimeout(camPoll,50);}
-function camErr(){camBusy=false;document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,2000);}
-function camPoll(){if(camBusy)return;camBusy=true;var url=camIP?'http://'+camIP+'/capture':'/cam?r='+Date.now();document.getElementById('camStream').src=url;}
+function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
+function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';}
+function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
 function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
 function toggleLED(){ledOn=!ledOn;fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
