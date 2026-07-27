@@ -1,130 +1,280 @@
-// ESP32-S3 AI Camera → MJPEG stream server using esp_http_server
-// Each client connection gets its own task (free-threaded mode)
-// Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
+// ESP32-S3 AI Camera — FreeRTOS multi-client MJPEG broadcaster
+// One task captures each JPEG once; another sends that same frame round-robin
+// to connected viewers. Based on the proven architecture of
+// arkhipenko/esp32-cam-mjpeg-multiclient, adapted for DFRobot DFR1154 pins.
 
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
-#include <esp_http_server.h>
+#include <WebServer.h>
+#include <WiFiClient.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/semphr.h>
 
 // === WiFi ===
-const char* AP_SSID = "OPhone 12";
-const char* AP_PASS = "qwer1234";
+const char *AP_SSID = "OPhone 12";
+const char *AP_PASS = "qwer1234";
 
-#define PIN_IR   47
-#define PIN_LED   3
+// === DFRobot DFR1154 FireBeetle 2 ESP32-S3 AI Camera ===
+#define CAM_PIN_PWDN     -1
+#define CAM_PIN_RESET    -1
+#define CAM_PIN_XCLK      5
+#define CAM_PIN_SIOD      8
+#define CAM_PIN_SIOC      9
+#define CAM_PIN_D7        4
+#define CAM_PIN_D6        6
+#define CAM_PIN_D5        7
+#define CAM_PIN_D4       14
+#define CAM_PIN_D3       17
+#define CAM_PIN_D2       21
+#define CAM_PIN_D1       18
+#define CAM_PIN_D0       16
+#define CAM_PIN_VSYNC     1
+#define CAM_PIN_HREF      2
+#define CAM_PIN_PCLK     15
 
-static httpd_handle_t server = NULL;
+#define PIN_IR  47
+#define PIN_LED 3
 
-#define PART_BOUNDARY "123456789000000000000987654321"
-static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
-static const char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
-static const char* STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
+// Keep this deliberately low for a phone hotspot. Each viewer receives the JPEG.
+static constexpr uint8_t MAX_STREAM_CLIENTS = 4;
+static constexpr uint8_t STREAM_FPS = 8;
+static constexpr uint16_t HTTP_TASK_PERIOD_MS = 50;
 
-// ================== Stream Handler ==================
+static WebServer server(80);
+static QueueHandle_t streamingClients = nullptr;
+static SemaphoreHandle_t frameMutex = nullptr;
+static TaskHandle_t cameraTaskHandle = nullptr;
+static TaskHandle_t streamTaskHandle = nullptr;
 
-static esp_err_t stream_handler(httpd_req_t *req) {
-  httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+// Double-buffered, copied JPEG frames. Only camera_capture_task calls esp_camera_fb_get().
+static uint8_t *frameBuffers[2] = {nullptr, nullptr};
+static size_t frameCapacities[2] = {0, 0};
+static const uint8_t *activeFrame = nullptr;
+static size_t activeFrameSize = 0;
+static uint8_t writeBufferIndex = 0;
+static volatile uint8_t activeClientCount = 0;
+static volatile bool cameraReady = false;
 
-  Serial.printf("[STREAM] Client connected (fd=%d)\n", httpd_req_to_sockfd(req));
+static const char STREAM_HEADER[] =
+  "HTTP/1.1 200 OK\r\n"
+  "Access-Control-Allow-Origin: *\r\n"
+  "Cache-Control: no-store\r\n"
+  "Connection: close\r\n"
+  "Content-Type: multipart/x-mixed-replace; boundary=esp32cam\r\n\r\n";
+static const char STREAM_BOUNDARY[] = "\r\n--esp32cam\r\n";
+static const char STREAM_CONTENT_TYPE[] = "Content-Type: image/jpeg\r\nContent-Length: ";
 
-  unsigned long lastSend = millis();
+static void camera_capture_task(void *parameter);
+static void stream_broadcast_task(void *parameter);
+static void http_server_task(void *parameter);
+static void handleStream();
+static void handleCapture();
+static void handleLight();
+static void handleStatus();
+static void handleHealth();
+static void handleRoot();
+static void connectWiFi();
+static bool ensureFrameCapacity(uint8_t index, size_t required);
+static void resumeStreamingTasks();
 
-  while (true) {
-    // Timeout: disconnect after 30s of no frame sent
-    if (millis() - lastSend > 30000) {
-      Serial.printf("[STREAM] Client %d timeout\n", httpd_req_to_sockfd(req));
-      break;
+static bool ensureFrameCapacity(uint8_t index, size_t required) {
+  if (required <= frameCapacities[index]) return true;
+
+  // Extra headroom avoids reallocating for small JPEG-size fluctuations.
+  size_t nextCapacity = required + required / 4;
+  uint8_t *next = static_cast<uint8_t *>(ps_malloc(nextCapacity));
+  if (!next) {
+    Serial.printf("[CAM] PSRAM allocation failed: %u bytes\n", static_cast<unsigned>(nextCapacity));
+    return false;
+  }
+  free(frameBuffers[index]);
+  frameBuffers[index] = next;
+  frameCapacities[index] = nextCapacity;
+  Serial.printf("[CAM] Frame buffer %u allocated: %u bytes\n", index, static_cast<unsigned>(nextCapacity));
+  return true;
+}
+
+static void resumeStreamingTasks() {
+  if (cameraTaskHandle && eTaskGetState(cameraTaskHandle) == eSuspended) vTaskResume(cameraTaskHandle);
+  if (streamTaskHandle && eTaskGetState(streamTaskHandle) == eSuspended) vTaskResume(streamTaskHandle);
+}
+
+// /stream only retains the client and returns. It never captures or sends frames itself.
+static void handleStream() {
+  if (!streamingClients || uxQueueSpacesAvailable(streamingClients) == 0) {
+    server.send(503, "text/plain", "Stream viewer limit reached");
+    return;
+  }
+
+  WiFiClient *client = new WiFiClient(server.client());
+  if (!client || !client->connected()) {
+    delete client;
+    server.send(503, "text/plain", "Unable to open stream");
+    return;
+  }
+
+  client->write(reinterpret_cast<const uint8_t *>(STREAM_HEADER), strlen(STREAM_HEADER));
+  client->write(reinterpret_cast<const uint8_t *>(STREAM_BOUNDARY), strlen(STREAM_BOUNDARY));
+
+  if (xQueueSend(streamingClients, &client, 0) != pdPASS) {
+    client->stop();
+    delete client;
+    server.send(503, "text/plain", "Stream viewer limit reached");
+    return;
+  }
+
+  activeClientCount = uxQueueMessagesWaiting(streamingClients);
+  Serial.printf("[STREAM] Client added; active=%u\n", activeClientCount);
+  resumeStreamingTasks();
+}
+
+static void handleCapture() {
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    server.send(503, "text/plain", "Camera capture failed");
+    return;
+  }
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Cache-Control", "no-store");
+  server.send_P(200, "image/jpeg", reinterpret_cast<const char *>(fb->buf), fb->len);
+  esp_camera_fb_return(fb);
+}
+
+static void sendLightJson() {
+  char json[64];
+  snprintf(json, sizeof(json), "{\"ir\":%d,\"led\":%d}", digitalRead(PIN_IR), digitalRead(PIN_LED));
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+}
+
+static void handleLight() {
+  if (server.hasArg("ir")) digitalWrite(PIN_IR, server.arg("ir").toInt() ? HIGH : LOW);
+  if (server.hasArg("led")) digitalWrite(PIN_LED, server.arg("led").toInt() ? HIGH : LOW);
+  sendLightJson();
+}
+
+static void handleStatus() { sendLightJson(); }
+
+static void handleHealth() {
+  char json[180];
+  snprintf(json, sizeof(json),
+    "{\"ok\":true,\"clients\":%u,\"frameBytes\":%u,\"freeHeap\":%u,\"freePsram\":%u,\"rssi\":%d}",
+    activeClientCount, static_cast<unsigned>(activeFrameSize),
+    static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getFreePsram()), WiFi.RSSI());
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+}
+
+static void handleRoot() {
+  server.send(200, "text/plain", "ESP32-S3 camera online. Use /stream, /capture, /health");
+}
+
+static void http_server_task(void *parameter) {
+  streamingClients = xQueueCreate(MAX_STREAM_CLIENTS, sizeof(WiFiClient *));
+  if (!streamingClients) {
+    Serial.println("[HTTP] Client queue allocation failed");
+    vTaskDelete(nullptr);
+    return;
+  }
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/stream", HTTP_GET, handleStream);
+  server.on("/capture", HTTP_GET, handleCapture);
+  server.on("/light", HTTP_GET, handleLight);
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/health", HTTP_GET, handleHealth);
+  server.onNotFound([]() { server.send(404, "text/plain", "This URI does not exist"); });
+  server.begin();
+  Serial.println("[HTTP] WebServer ready: /stream /capture /light /status /health");
+
+  TickType_t lastWake = xTaskGetTickCount();
+  for (;;) {
+    server.handleClient();
+    taskYIELD();
+    vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(HTTP_TASK_PERIOD_MS));
+  }
+}
+
+static void camera_capture_task(void *parameter) {
+  TickType_t lastWake = xTaskGetTickCount();
+  const TickType_t period = pdMS_TO_TICKS(1000 / STREAM_FPS);
+
+  for (;;) {
+    if (!streamingClients || uxQueueMessagesWaiting(streamingClients) == 0) {
+      vTaskSuspend(nullptr);
+      continue;
     }
 
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
-      delay(5);
+      Serial.println("[CAM] esp_camera_fb_get failed");
+      vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
 
-    char part_buf[64];
-    size_t hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, fb->len);
-
-    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) break;
-    if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) break;
-    if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
-
+    const uint8_t nextIndex = writeBufferIndex;
+    if (ensureFrameCapacity(nextIndex, fb->len)) {
+      memcpy(frameBuffers[nextIndex], fb->buf, fb->len);
+      xSemaphoreTake(frameMutex, portMAX_DELAY);
+      activeFrame = frameBuffers[nextIndex];
+      activeFrameSize = fb->len;
+      writeBufferIndex = nextIndex ^ 1;
+      xSemaphoreGive(frameMutex);
+      cameraReady = true;
+    }
     esp_camera_fb_return(fb);
-    lastSend = millis();
 
-    // Yield to other tasks between frames
-    delay(1);
+    vTaskDelayUntil(&lastWake, period);
   }
-
-  Serial.printf("[STREAM] Client %d disconnected\n", httpd_req_to_sockfd(req));
-  return ESP_OK;
 }
 
-// ================== Capture Handler ==================
+static void stream_broadcast_task(void *parameter) {
+  TickType_t lastWake = xTaskGetTickCount();
 
-static esp_err_t capture_handler(httpd_req_t *req) {
-  httpd_resp_set_type(req, "image/jpeg");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) { httpd_resp_sendstr(req, "fail"); return ESP_FAIL; }
-  httpd_resp_send(req, (const char*)fb->buf, fb->len);
-  esp_camera_fb_return(fb);
-  return ESP_OK;
-}
+  for (;;) {
+    if (!streamingClients || uxQueueMessagesWaiting(streamingClients) == 0 || !cameraReady) {
+      vTaskSuspend(nullptr);
+      continue;
+    }
 
-// ================== IR / LED ==================
+    WiFiClient *client = nullptr;
+    if (xQueueReceive(streamingClients, &client, 0) != pdPASS || !client) {
+      vTaskDelay(pdMS_TO_TICKS(5));
+      continue;
+    }
 
-static esp_err_t light_handler(httpd_req_t *req) {
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  char query[100];
-  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
-    char param[16];
-    if (httpd_query_key_value(query, "ir", param, sizeof(param)) == ESP_OK)
-      digitalWrite(PIN_IR, atoi(param) ? HIGH : LOW);
-    if (httpd_query_key_value(query, "led", param, sizeof(param)) == ESP_OK)
-      digitalWrite(PIN_LED, atoi(param) ? HIGH : LOW);
-  }
-  char json[64];
-  snprintf(json, sizeof(json), "{\"ir\":%d,\"led\":%d}", digitalRead(PIN_IR), digitalRead(PIN_LED));
-  httpd_resp_sendstr(req, json);
-  return ESP_OK;
-}
+    bool keep = client->connected();
+    if (keep) {
+      xSemaphoreTake(frameMutex, portMAX_DELAY);
+      const uint8_t *frame = activeFrame;
+      const size_t size = activeFrameSize;
+      char lengthLine[24];
+      snprintf(lengthLine, sizeof(lengthLine), "%u\r\n\r\n", static_cast<unsigned>(size));
 
-static esp_err_t status_handler(httpd_req_t *req) {
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  char json[64];
-  snprintf(json, sizeof(json), "{\"ir\":%d,\"led\":%d}", digitalRead(PIN_IR), digitalRead(PIN_LED));
-  httpd_resp_sendstr(req, json);
-  return ESP_OK;
-}
+      if (!frame || size == 0 ||
+          client->write(reinterpret_cast<const uint8_t *>(STREAM_CONTENT_TYPE), strlen(STREAM_CONTENT_TYPE)) != strlen(STREAM_CONTENT_TYPE) ||
+          client->write(reinterpret_cast<const uint8_t *>(lengthLine), strlen(lengthLine)) != strlen(lengthLine) ||
+          client->write(frame, size) != size ||
+          client->write(reinterpret_cast<const uint8_t *>(STREAM_BOUNDARY), strlen(STREAM_BOUNDARY)) != strlen(STREAM_BOUNDARY)) {
+        keep = false;
+      }
+      xSemaphoreGive(frameMutex);
+    }
 
-// ================== Start Server ==================
+    if (keep && client->connected()) {
+      xQueueSend(streamingClients, &client, 0);
+    } else {
+      client->stop();
+      delete client;
+      activeClientCount = uxQueueMessagesWaiting(streamingClients);
+      Serial.printf("[STREAM] Client dropped; active=%u\n", activeClientCount);
+    }
 
-static void startCameraServer() {
-  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.server_port = 80;
-  config.max_open_sockets = 10;
-  config.max_uri_handlers = 10;
-  config.lru_purge_enable = true;
-
-  httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler };
-  httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET, .handler = capture_handler };
-  httpd_uri_t light_uri = { .uri = "/light", .method = HTTP_GET, .handler = light_handler };
-  httpd_uri_t status_uri = { .uri = "/status", .method = HTTP_GET, .handler = status_handler };
-
-  if (httpd_start(&server, &config) == ESP_OK) {
-    httpd_register_uri_handler(server, &stream_uri);
-    httpd_register_uri_handler(server, &capture_uri);
-    httpd_register_uri_handler(server, &light_uri);
-    httpd_register_uri_handler(server, &status_uri);
-    Serial.println("[HTTP] Server started on port 80");
-  } else {
-    Serial.println("[HTTP] Failed to start server!");
+    const UBaseType_t clients = uxQueueMessagesWaiting(streamingClients);
+    const TickType_t slice = clients ? pdMS_TO_TICKS(1000 / STREAM_FPS / clients) : pdMS_TO_TICKS(10);
+    vTaskDelayUntil(&lastWake, slice > 0 ? slice : 1);
   }
 }
 
@@ -132,96 +282,100 @@ static void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
   WiFi.begin(AP_SSID, AP_PASS);
   Serial.printf("[WiFi] Connecting to %s", AP_SSID);
-  for (int tries = 0; tries < 40; tries++) {
-    if (WiFi.status() == WL_CONNECTED) break;
-    delay(500); Serial.print(".");
+  for (int tries = 0; tries < 40 && WiFi.status() != WL_CONNECTED; ++tries) {
+    delay(500);
+    Serial.print('.');
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
-    if (server) { httpd_stop(server); server = NULL; }
-    startCameraServer();
     MDNS.begin("esp32-cam");
   } else {
-    Serial.println("\n[WiFi] FAILED — will retry in loop()");
+    Serial.println("\n[WiFi] Failed; will retry");
   }
 }
-
-// ================== Setup ==================
 
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n[CAM] ESP32-S3 AI Camera booting...");
+  Serial.println("\n[CAM] ESP32-S3 multi-client camera booting");
 
-  camera_config_t config;
+  camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
-  config.ledc_timer   = LEDC_TIMER_0;
-  config.pin_d0       = 16;
-  config.pin_d1       = 18;
-  config.pin_d2       = 21;
-  config.pin_d3       = 17;
-  config.pin_d4       = 14;
-  config.pin_d5       = 7;
-  config.pin_d6       = 6;
-  config.pin_d7       = 4;
-  config.pin_xclk     = 5;
-  config.pin_pclk     = 15;
-  config.pin_vsync    = 1;
-  config.pin_href     = 2;
-  config.pin_sccb_sda = 8;
-  config.pin_sccb_scl = 9;
-  config.pin_pwdn     = -1;
-  config.pin_reset    = -1;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = CAM_PIN_D0;
+  config.pin_d1 = CAM_PIN_D1;
+  config.pin_d2 = CAM_PIN_D2;
+  config.pin_d3 = CAM_PIN_D3;
+  config.pin_d4 = CAM_PIN_D4;
+  config.pin_d5 = CAM_PIN_D5;
+  config.pin_d6 = CAM_PIN_D6;
+  config.pin_d7 = CAM_PIN_D7;
+  config.pin_xclk = CAM_PIN_XCLK;
+  config.pin_pclk = CAM_PIN_PCLK;
+  config.pin_vsync = CAM_PIN_VSYNC;
+  config.pin_href = CAM_PIN_HREF;
+  config.pin_sccb_sda = CAM_PIN_SIOD;
+  config.pin_sccb_scl = CAM_PIN_SIOC;
+  config.pin_pwdn = CAM_PIN_PWDN;
+  config.pin_reset = CAM_PIN_RESET;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.grab_mode    = CAMERA_GRAB_LATEST;
-  config.fb_location  = CAMERA_FB_IN_PSRAM;
-  config.fb_count     = 2;
-  config.frame_size   = FRAMESIZE_UXGA;
+  config.grab_mode = CAMERA_GRAB_LATEST;
+  config.fb_location = CAMERA_FB_IN_PSRAM;
+  config.fb_count = 2;
+  config.frame_size = FRAMESIZE_UXGA;
   config.jpeg_quality = 20;
 
   if (!psramFound()) {
-    config.frame_size  = FRAMESIZE_QVGA;
+    config.frame_size = FRAMESIZE_QVGA;
     config.fb_location = CAMERA_FB_IN_DRAM;
-    config.fb_count    = 1;
-    Serial.println("[CAM] No PSRAM, QVGA DRAM mode");
-  } else {
-    Serial.println("[CAM] PSRAM found, UXGA buffer → QVGA stream");
+    config.fb_count = 1;
+    Serial.println("[CAM] No PSRAM; QVGA DRAM fallback");
   }
 
-  esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) { Serial.printf("[CAM] Init FAILED: 0x%x\n", err); return; }
-  Serial.println("[CAM] Init OK");
+  if (esp_camera_init(&config) != ESP_OK) {
+    Serial.println("[CAM] Camera init failed");
+    return;
+  }
 
-  sensor_t *s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_QVGA);
-  s->set_vflip(s, 1);
-  s->set_hmirror(s, 0);
-  s->set_brightness(s, 1);
-  s->set_contrast(s, 1);
-  s->set_saturation(s, 0);
-  s->set_exposure_ctrl(s, 1);
-  s->set_aec2(s, 0);
-  s->set_agc_gain(s, 0);
-  s->set_gain_ctrl(s, 1);
-  s->set_gainceiling(s, (gainceiling_t)2);
-  s->set_ae_level(s, 1);
+  sensor_t *sensor = esp_camera_sensor_get();
+  sensor->set_framesize(sensor, FRAMESIZE_QVGA);
+  sensor->set_vflip(sensor, 1);
+  sensor->set_hmirror(sensor, 0);
+  sensor->set_brightness(sensor, 1);
+  sensor->set_contrast(sensor, 1);
+  sensor->set_saturation(sensor, 0);
+  sensor->set_exposure_ctrl(sensor, 1);
+  sensor->set_aec2(sensor, 0);
+  sensor->set_agc_gain(sensor, 0);
+  sensor->set_gain_ctrl(sensor, 1);
+  sensor->set_gainceiling(sensor, static_cast<gainceiling_t>(2));
+  sensor->set_ae_level(sensor, 1);
 
-  pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
-  pinMode(PIN_LED, OUTPUT); digitalWrite(PIN_LED, LOW);
+  pinMode(PIN_IR, OUTPUT);
+  pinMode(PIN_LED, OUTPUT);
+  digitalWrite(PIN_IR, LOW);
+  digitalWrite(PIN_LED, LOW);
 
   WiFi.setHostname("esp32-cam");
   WiFi.setSleep(false);
   connectWiFi();
 
+  frameMutex = xSemaphoreCreateMutex();
+  if (!frameMutex) {
+    Serial.println("[CAM] Frame mutex allocation failed");
+    return;
+  }
+
+  xTaskCreatePinnedToCore(http_server_task, "cam_http", 4096, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(camera_capture_task, "cam_capture", 6144, nullptr, 2, &cameraTaskHandle, 1);
+  xTaskCreatePinnedToCore(stream_broadcast_task, "cam_stream", 6144, nullptr, 2, &streamTaskHandle, 1);
   Serial.println("[CAM] Ready");
 }
 
-// ================== Loop ==================
-
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[LOOP] WiFi lost, reconnecting...");
+    Serial.println("[WIFI] Connection lost; reconnecting");
     connectWiFi();
   }
   delay(5000);
