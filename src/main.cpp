@@ -672,7 +672,7 @@ function exportCSV(){
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='';
 function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
-function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';}
+function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';setTimeout(camPoll,5000);}
 function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
 function toggleIR(){irOn=!irOn;fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
