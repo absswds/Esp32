@@ -1,17 +1,16 @@
-// ESP32-S3 AI Camera → MJPEG stream server
-// Connects to user's WiFi AP, serves MJPEG stream + single-frame capture + light control
+// ESP32-S3 AI Camera → MJPEG stream server using esp_http_server (non-blocking)
 // Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
 
 #include "esp_camera.h"
 #include <WiFi.h>
-#include <WebServer.h>
 #include <ESPmDNS.h>
+#include <esp_http_server.h>
 
 // === WiFi ===
 const char* AP_SSID = "OPhone 12";
 const char* AP_PASS = "qwer1234";
 
-// === DFRobot DFR1154 ESP32-S3 AI Camera pinout (OV3660) ===
+// === Pinout (DFRobot DFR1154 ESP32-S3 AI Camera / OV3660) ===
 #define CAM_PIN_pwdn    -1
 #define CAM_PIN_reset   -1
 #define CAM_PIN_xclk     5
@@ -32,42 +31,141 @@ const char* AP_PASS = "qwer1234";
 #define PIN_IR   47
 #define PIN_LED   3
 
-WebServer server(80);
+static httpd_handle_t server = NULL;
 
-// Stream task runs on core 0 — does NOT block WebServer on core 1
-volatile bool streamActive = false;
+// ================== MJPEG Stream Handler ==================
 
-void streamTask(void *arg) {
-  WiFiClient client = *(WiFiClient*)arg;
-  client.setTimeout(5);
-  client.print("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nAccess-Control-Allow-Origin: *\r\n\r\n");
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char* STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-  streamActive = true;
+static esp_err_t stream_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
   Serial.println("[STREAM] Client connected");
 
-  while (client.connected() && streamActive) {
+  while (true) {
     camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) { delay(5); continue; }
-
-    client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
-    size_t written = client.write(fb->buf, fb->len);
-    client.print("\r\n");
-    esp_camera_fb_return(fb);
-
-    if (written != fb->len) {
-      Serial.println("[STREAM] Write mismatch, closing");
-      break;
+    if (!fb) {
+      delay(5);
+      continue;
     }
 
-    // ~15 fps max, yield to other tasks
-    vTaskDelay(pdMS_TO_TICKS(33));
+    char part_buf[64];
+    size_t hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, fb->len);
+
+    // Non-blocking chunked send — returns error on disconnect
+    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
+
+    esp_camera_fb_return(fb);
   }
 
-  client.stop();
-  streamActive = false;
   Serial.println("[STREAM] Client disconnected");
-  vTaskDelete(NULL);
+  return ESP_OK;
 }
+
+// ================== Capture Handler ==================
+
+static esp_err_t capture_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "image/jpeg");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
+
+  camera_fb_t *fb = esp_camera_fb_get();
+  if (!fb) {
+    httpd_resp_sendstr(req, "Capture failed");
+    return ESP_FAIL;
+  }
+  httpd_resp_send(req, (const char*)fb->buf, fb->len);
+  esp_camera_fb_return(fb);
+  return ESP_OK;
+}
+
+// ================== IR / LED Handlers ==================
+
+static esp_err_t light_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+  char query[100];
+  if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+    char param[16];
+    if (httpd_query_key_value(query, "ir", param, sizeof(param)) == ESP_OK) {
+      digitalWrite(PIN_IR, atoi(param) ? HIGH : LOW);
+    }
+    if (httpd_query_key_value(query, "led", param, sizeof(param)) == ESP_OK) {
+      digitalWrite(PIN_LED, atoi(param) ? HIGH : LOW);
+    }
+  }
+
+  char json[64];
+  snprintf(json, sizeof(json), "{\"ir\":%d,\"led\":%d}", digitalRead(PIN_IR), digitalRead(PIN_LED));
+  httpd_resp_sendstr(req, json);
+  return ESP_OK;
+}
+
+static esp_err_t status_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  char json[64];
+  snprintf(json, sizeof(json), "{\"ir\":%d,\"led\":%d}", digitalRead(PIN_IR), digitalRead(PIN_LED));
+  httpd_resp_sendstr(req, json);
+  return ESP_OK;
+}
+
+// ================== Start HTTP Server ==================
+
+static void startCameraServer() {
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.server_port = 80;
+  config.max_uri_handlers = 8;
+  config.lru_purge_enable = true;
+
+  // Stream URI (priority)
+  httpd_uri_t stream_uri = {
+    .uri       = "/stream",
+    .method    = HTTP_GET,
+    .handler   = stream_handler,
+    .user_ctx  = NULL
+  };
+
+  httpd_uri_t capture_uri = {
+    .uri       = "/capture",
+    .method    = HTTP_GET,
+    .handler   = capture_handler,
+    .user_ctx  = NULL
+  };
+
+  httpd_uri_t light_uri = {
+    .uri       = "/light",
+    .method    = HTTP_GET,
+    .handler   = light_handler,
+    .user_ctx  = NULL
+  };
+
+  httpd_uri_t status_uri = {
+    .uri       = "/status",
+    .method    = HTTP_GET,
+    .handler   = status_handler,
+    .user_ctx  = NULL
+  };
+
+  if (httpd_start(&server, &config) == ESP_OK) {
+    httpd_register_uri_handler(server, &stream_uri);
+    httpd_register_uri_handler(server, &capture_uri);
+    httpd_register_uri_handler(server, &light_uri);
+    httpd_register_uri_handler(server, &status_uri);
+    Serial.println("[HTTP] Server started on port 80");
+  } else {
+    Serial.println("[HTTP] Failed to start server!");
+  }
+}
+
+// ================== Setup ==================
 
 void setup() {
   Serial.begin(115200);
@@ -98,17 +196,16 @@ void setup() {
   config.grab_mode    = CAMERA_GRAB_LATEST;
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.fb_count     = 2;
+  config.frame_size   = FRAMESIZE_UXGA;     // 大 buffer 預分配
+  config.jpeg_quality = 12;
 
-  // CIF 400x296 — 比 VGA 小 4 倍，每幀 ~8-15KB，編碼 ~15ms
-  if (psramFound()) {
-    config.frame_size   = FRAMESIZE_CIF;   // 400x296
-    config.jpeg_quality = 15;              // 0=best 63=worst, 15=good balance
-    Serial.println("[CAM] PSRAM found, CIF mode (400x296)");
+  if (!psramFound()) {
+    config.frame_size  = FRAMESIZE_QVGA;
+    config.fb_location = CAMERA_FB_IN_DRAM;
+    config.fb_count    = 1;
+    Serial.println("[CAM] No PSRAM, QVGA DRAM mode");
   } else {
-    config.frame_size   = FRAMESIZE_QVGA;  // 320x240
-    config.jpeg_quality = 18;
-    config.fb_location  = CAMERA_FB_IN_DRAM;
-    Serial.println("[CAM] No PSRAM, QVGA mode (320x240)");
+    Serial.println("[CAM] PSRAM found, UXGA buffer → QVGA stream");
   }
 
   esp_err_t err = esp_camera_init(&config);
@@ -118,26 +215,18 @@ void setup() {
   }
   Serial.println("[CAM] Init OK");
 
-  // Sensor tuning — 穩定自動曝光，減少運動時抖動
+  // Sensor: 啟動後降到 QVGA 提高幀率
   sensor_t *s = esp_camera_sensor_get();
+  s->set_framesize(s, FRAMESIZE_QVGA);  // 320x240
   s->set_vflip(s, 1);
   s->set_hmirror(s, 0);
   s->set_brightness(s, 1);
   s->set_contrast(s, 1);
   s->set_saturation(s, 0);
-  // 固定白平衡模式 0=auto，但可試 1=sunny 減少切換延遲
-  s->set_whitebal(s, 1);
-  s->set_awb_gain(s, 1);
-  s->set_wb_mode(s, 0);  // 0=auto
-  // 自動曝光穩定
-  s->set_exposure_ctrl(s, 1);
-  s->set_aec2(s, 1);      // DSP auto exposure
-  s->set_gain_ctrl(s, 1);  // auto gain
-  s->set_agc_gain(s, 0);
-  s->set_gainceiling(s, (gainceiling_t)6);
 
   // WiFi
   WiFi.setHostname("esp32-cam");
+  WiFi.setSleep(false);                    // 防止 WiFi 休眠導致卡頓
   WiFi.begin(AP_SSID, AP_PASS);
   Serial.printf("[WiFi] Connecting to %s", AP_SSID);
   for (int tries = 0; tries < 40; tries++) {
@@ -155,55 +244,14 @@ void setup() {
     Serial.println("[MDNS] esp32-cam.local ready");
   }
 
-  // HTTP routes
+  // IR / LED 初始關閉
+  pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
+  pinMode(PIN_LED, OUTPUT); digitalWrite(PIN_LED, LOW);
 
-  // Single-frame capture (always works, even when stream is active)
-  server.on("/capture", HTTP_GET, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) { server.send(500, "text/plain", "Capture failed"); return; }
-    server.sendHeader("Content-Disposition", "inline; filename=capture.jpg");
-    server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-  });
-
-  // MJPEG stream — spawns FreeRTOS task on core 0
-  server.on("/stream", HTTP_GET, []() {
-    if (streamActive) {
-      server.send(503, "text/plain", "Stream busy");
-      return;
-    }
-    WiFiClient client = server.client();
-    // Detach from WebServer — task will own this client
-    xTaskCreatePinnedToCore(streamTask, "stream", 4096, new WiFiClient(client), 1, NULL, 0);
-    // Don't send response — streamTask does it
-  });
-
-  // IR + LED
-  pinMode(PIN_IR, OUTPUT);
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_IR, LOW);
-  digitalWrite(PIN_LED, LOW);
-
-  server.on("/light", HTTP_GET, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    if (server.hasArg("ir"))   digitalWrite(PIN_IR,   server.arg("ir").toInt() ? HIGH : LOW);
-    if (server.hasArg("led"))  digitalWrite(PIN_LED,  server.arg("led").toInt() ? HIGH : LOW);
-    String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
-    server.send(200, "application/json", json);
-  });
-
-  server.on("/status", HTTP_GET, []() {
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    String json = "{\"ir\":" + String(digitalRead(PIN_IR)) + ",\"led\":" + String(digitalRead(PIN_LED)) + "}";
-    server.send(200, "application/json", json);
-  });
-
-  server.begin();
-  Serial.println("[CAM] HTTP server started");
+  startCameraServer();
 }
 
+// loop — 什麼都不做，esp_http_server 自行處理
 void loop() {
-  server.handleClient();
-  delay(1);
+  delay(10000);
 }
