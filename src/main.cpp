@@ -481,14 +481,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--o)}
 .card .val{font-size:clamp(1.2rem,2.2vw,1.7rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.045em}
 .card .lbl{font-size:.62rem;color:var(--t2);margin-top:5px;letter-spacing:.04em}
-.dashboard{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,.85fr);gap:14px;align-items:stretch}
-.primary-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr);gap:14px;align-items:stretch}
-.left-col{display:grid;grid-template-rows:1fr auto;gap:10px;min-height:0}
-.bottom-panels{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.control-col{display:grid;gap:10px}
+.dashboard{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,.85fr);gap:14px;align-items:start}
+.primary-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.72fr);gap:10px;align-items:start}
+.chart-sec{grid-column:1/-1;min-height:0}.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.chart-toolbar h2{margin:0}.chart-toolbar .act-row{margin:0;width:auto;flex-shrink:0}.chart-toolbar .act-btn{min-width:82px}
+.desktop-charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.desktop-chart{min-width:0;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px}.desktop-chart h3{font-size:.62rem;font-weight:750;color:var(--t2);margin:0 0 5px}.desktop-chart.nest h3{color:var(--r)}.desktop-chart.room h3{color:var(--b)}.desktop-chart.vent h3{color:var(--o)}
+.desktop-chart canvas{width:100%;height:165px;display:block}.mobile-chart{display:none}.bottom-panels{display:grid;grid-template-columns:1fr 1fr;gap:10px}.control-col{display:grid;gap:10px}
 .sec{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:0}
 .sec h2{font-size:.68rem;color:var(--t2);font-weight:750;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
-.chart-sec{min-height:300px;display:flex;flex-direction:column}.chart-sec #chart{flex:1;height:auto;min-height:210px}.cam-sec{height:100%}
+.cam-sec{height:100%}
 .system-sec .btn{margin-bottom:2px}
 .control-col .sec{box-shadow:0 1px 0 rgba(255,255,255,.018)}
 .btn{width:100%;padding:11px;border-radius:6px;border:none;font-size:.85rem;font-weight:700;cursor:pointer;transition:all .15s}
@@ -521,8 +521,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .cam-off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:.7rem}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-@media(max-width:900px){body{max-width:760px;padding:14px 16px}.dashboard,.primary-grid{grid-template-columns:1fr}.control-col{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.system-sec{grid-column:1/-1}.chart-sec{min-height:0}#chart{height:170px}}
-@media(max-width:560px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.chart-sec{min-height:0}#chart{height:130px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
+@media(max-width:900px){body{max-width:760px;padding:14px 16px}.dashboard,.primary-grid{grid-template-columns:1fr}.control-col{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.system-sec{grid-column:1/-1}.desktop-chart canvas{height:150px}}
+@media(max-width:768px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.bottom-panels{grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.desktop-charts{display:none}.mobile-chart{display:block}.chart-toolbar{align-items:flex-start;flex-direction:column;gap:8px}.chart-toolbar .act-row{width:100%}.chart-toolbar .act-btn{min-width:0}.mobile-chart #chart{height:150px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -538,20 +538,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 </div>
 <div class="dashboard">
   <div class="primary-grid">
-    <div class="left-col">
-      <div class="sec chart-sec">
-  <h2>溫度趨勢</h2>
-  <canvas id="chart"></canvas>
-  <div class="pills" style="margin-top:2px;margin-bottom:4px">
-    <div class="pill ch-pill act" onclick="setChart(0)">巢穴</div>
-    <div class="pill ch-pill" onclick="setChart(1)">活動區</div>
-    <div class="pill ch-pill" onclick="setChart(2)">出風口</div>
-  </div>
-  <div class="act-row">
-    <button class="act-btn" onclick="exportCSV()">導出 CSV</button>
-    <button class="act-btn" onclick="clearHist()">清除記錄</button>
-  </div>
-</div>
+    <div class="sec chart-sec">
+      <div class="chart-toolbar">
+        <h2>溫度趨勢</h2>
+        <div class="act-row">
+          <button class="act-btn" onclick="exportCSV()">導出 CSV</button>
+          <button class="act-btn" onclick="clearHist()">清除記錄</button>
+        </div>
+      </div>
+      <div class="desktop-charts">
+        <div class="desktop-chart nest"><h3>巢穴</h3><canvas id="chartNest"></canvas></div>
+        <div class="desktop-chart room"><h3>活動區</h3><canvas id="chartRoom"></canvas></div>
+        <div class="desktop-chart vent"><h3>出風口</h3><canvas id="chartVent"></canvas></div>
+      </div>
+      <div class="mobile-chart">
+        <canvas id="chart"></canvas>
+        <div class="pills" style="margin-top:2px;margin-bottom:4px">
+          <div class="pill ch-pill act" onclick="setChart(0)">巢穴</div>
+          <div class="pill ch-pill" onclick="setChart(1)">活動區</div>
+          <div class="pill ch-pill" onclick="setChart(2)">出風口</div>
+        </div>
+      </div>
+    </div>
 <div class="bottom-panels">
 <div class="sec">
   <h2>實驗目標溫度</h2>
@@ -587,7 +595,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
 </div>
 </div>
-    </div>
     <div class="sec cam-sec" id="camSec">
   <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
   <div id="camBody" style="display:none">
@@ -640,45 +647,34 @@ var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
 var cv=document.getElementById('chart'),cx=cv.getContext('2d');
-function rs(){var r=cv.getBoundingClientRect();cv.width=r.width*devicePixelRatio;cv.height=r.height*devicePixelRatio;cx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);dC();}
+var desktopCharts=[
+  {cv:document.getElementById('chartNest'),mode:0},
+  {cv:document.getElementById('chartRoom'),mode:1},
+  {cv:document.getElementById('chartVent'),mode:2}
+];
+function sizeCanvas(canvas){var r=canvas.getBoundingClientRect();canvas.width=Math.max(1,Math.round(r.width*devicePixelRatio));canvas.height=Math.max(1,Math.round(r.height*devicePixelRatio));var ctx=canvas.getContext('2d');ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);return ctx;}
+function rs(){cx=sizeCanvas(cv);desktopCharts.forEach(function(c){sizeCanvas(c.cv);});dC();}
 window.addEventListener('resize',rs);
-function dC(){
-  var W=cv.getBoundingClientRect().width,HH=cv.getBoundingClientRect().height,pl=38,pr=8,pt=10,pb=18;
-  var f=chartFields[chartMode],cl=chartColors[chartMode],lb=chartLabels[chartMode];
-  cx.clearRect(0,0,W,HH);
-  if(H.length<2){cx.fillStyle='#4a5568';cx.font='11px system-ui';cx.textAlign='center';cx.fillText('等待 '+lb+' 資料...',W/2,HH/2);return;}
+function drawChart(canvas,mode){
+  var ctx=canvas.getContext('2d'),W=canvas.getBoundingClientRect().width,HH=canvas.getBoundingClientRect().height,pl=34,pr=7,pt=10,pb=18;
+  var f=chartFields[mode],cl=chartColors[mode],lb=chartLabels[mode];
+  ctx.clearRect(0,0,W,HH);
+  if(H.length<2){ctx.fillStyle='#4a5568';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText('等待 '+lb+' 資料...',W/2,HH/2);return;}
   var mn=1e9,mx=-1e9;H.forEach(function(r){var v=r[f];if(v!=null&&v<mn)mn=v;if(v!=null&&v>mx)mx=v;});
   if(mn>=mx){mn-=1;mx+=1;}
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
   var pw=W-pl-pr,ph=HH-pt-pb;
-  cx.strokeStyle='rgba(122,138,154,.06)';cx.lineWidth=1;cx.fillStyle='#4a5568';cx.font='9px system-ui';cx.textAlign='right';
-  for(var i=0;i<=4;i++){var v=mx-(sp*i/4),y=pt+ph*i/4;cx.beginPath();cx.moveTo(pl,y);cx.lineTo(W-pr,y);cx.stroke();cx.fillText(v.toFixed(1),pl-4,y+3);}
-  cx.textAlign='center';cx.font='8px system-ui';
-  var st=pw/Math.max(1,H.length-1),xt=Math.max(1,Math.ceil(H.length/5));
-  H.forEach(function(r,i){if(i%xt===0||i===H.length-1)cx.fillText(r.ti,pl+st*i,HH-pb+12);});
-  var gd=cx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,cl[1]+'.2)');gd.addColorStop(1,cl[1]+'0)');
-  cx.beginPath();var drawing=false;H.forEach(function(r,i){
-    var x=pl+st*i,v=r[f];
-    if(v==null){drawing=false;return;}
-    var y=pt+(1-(v-mn)/sp)*ph;
-    if(!drawing){cx.moveTo(x,y);drawing=true;}else cx.lineTo(x,y);
-  });cx.lineTo(pl+st*(H.length-1),HH-pb);cx.lineTo(pl,HH-pb);cx.closePath();cx.fillStyle=gd;cx.fill();
-  cx.beginPath();cx.strokeStyle=cl[0];cx.lineWidth=2;cx.lineJoin='round';
-  drawing=false;H.forEach(function(r,i){
-    var x=pl+st*i,v=r[f];
-    if(v==null){drawing=false;return;}
-    var y=pt+(1-(v-mn)/sp)*ph;
-    if(!drawing){cx.moveTo(x,y);drawing=true;}else cx.lineTo(x,y);
-  });cx.stroke();
-  var la=H[H.length-1],laV=la[f];
-  if(laV!=null){
-    var lx=pl+st*(H.length-1),ly=pt+(1-(laV-mn)/sp)*ph;
-    cx.beginPath();cx.arc(lx,ly,4,0,Math.PI*2);cx.fillStyle=cl[0];cx.fill();
-    cx.beginPath();cx.arc(lx,ly,7,0,Math.PI*2);cx.strokeStyle=cl[1]+'.3)';cx.lineWidth=2;cx.stroke();
-    cx.fillStyle=cl[0];cx.font='bold 10px system-ui';cx.textAlign='right';cx.fillText(laV.toFixed(1)+'C',lx-10,ly-8);
-  }
+  ctx.strokeStyle='rgba(122,138,154,.08)';ctx.lineWidth=1;ctx.fillStyle='#4a5568';ctx.font='9px system-ui';ctx.textAlign='right';
+  for(var i=0;i<=3;i++){var v=mx-(sp*i/3),y=pt+ph*i/3;ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(W-pr,y);ctx.stroke();ctx.fillText(v.toFixed(1),pl-3,y+3);}
+  ctx.textAlign='center';ctx.font='8px system-ui';var st=pw/Math.max(1,H.length-1),xt=Math.max(1,Math.ceil(H.length/3));
+  H.forEach(function(r,i){if(i%xt===0||i===H.length-1)ctx.fillText(r.ti,pl+st*i,HH-pb+12);});
+  var gd=ctx.createLinearGradient(0,pt,0,HH-pb);gd.addColorStop(0,cl[1]+'.2)');gd.addColorStop(1,cl[1]+'0)');
+  ctx.beginPath();var drawing=false;H.forEach(function(r,i){var x=pl+st*i,v=r[f];if(v==null){drawing=false;return;}var y=pt+(1-(v-mn)/sp)*ph;if(!drawing){ctx.moveTo(x,y);drawing=true;}else ctx.lineTo(x,y);});ctx.lineTo(pl+st*(H.length-1),HH-pb);ctx.lineTo(pl,HH-pb);ctx.closePath();ctx.fillStyle=gd;ctx.fill();
+  ctx.beginPath();ctx.strokeStyle=cl[0];ctx.lineWidth=2;ctx.lineJoin='round';drawing=false;H.forEach(function(r,i){var x=pl+st*i,v=r[f];if(v==null){drawing=false;return;}var y=pt+(1-(v-mn)/sp)*ph;if(!drawing){ctx.moveTo(x,y);drawing=true;}else ctx.lineTo(x,y);});ctx.stroke();
+  var la=H[H.length-1],laV=la[f];if(laV!=null){var lx=pl+st*(H.length-1),ly=pt+(1-(laV-mn)/sp)*ph;ctx.beginPath();ctx.arc(lx,ly,3.5,0,Math.PI*2);ctx.fillStyle=cl[0];ctx.fill();ctx.fillStyle=cl[0];ctx.font='bold 10px system-ui';ctx.textAlign='right';ctx.fillText(laV.toFixed(1)+'C',Math.max(pl+35,lx-7),ly-7);}
 }
+function dC(){drawChart(cv,chartMode);desktopCharts.forEach(function(c){drawChart(c.cv,c.mode);});}
 rs();
 function toast(m){var e=document.getElementById('toast');e.textContent=m;e.className='toast show';setTimeout(function(){e.className='toast';},1500);}
 function exportCSV(){
