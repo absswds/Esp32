@@ -1,76 +1,68 @@
-// ESP32-S3 AI Camera → MJPEG broadcast server
+// ESP32-S3 AI Camera → MJPEG stream server using esp_http_server
+// Each client connection gets its own task (free-threaded mode)
 // Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
-// Architecture: single frame capture in loop(), broadcast to ALL connected clients
-// This avoids esp_camera_fb_get() contention and enables true multi-client streaming
 
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
-#include <sys/socket.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
 
 // === WiFi ===
 const char* AP_SSID = "OPhone 12";
 const char* AP_PASS = "qwer1234";
 
-// === Pinout (DFRobot DFR1154 ESP32-S3 AI Camera / OV3660) ===
 #define PIN_IR   47
 #define PIN_LED   3
 
 static httpd_handle_t server = NULL;
 
-// ========== Client list ==========
+#define PART_BOUNDARY "123456789000000000000987654321"
+static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
+static const char* STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
+static const char* STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
-typedef struct client_node {
-  int sockfd;
-  struct client_node *next;
-  int64_t lastWrite;
-} client_node_t;
-
-static client_node_t *clientList = NULL;
-static SemaphoreHandle_t clientMutex = NULL;
-
-static void addClient(int sockfd) {
-  xSemaphoreTake(clientMutex, portMAX_DELAY);
-  // Check if already in list
-  for (client_node_t *c = clientList; c; c = c->next)
-    if (c->sockfd == sockfd) { xSemaphoreGive(clientMutex); return; }
-  client_node_t *n = (client_node_t*)malloc(sizeof(client_node_t));
-  n->sockfd = sockfd; n->next = clientList; n->lastWrite = esp_timer_get_time();
-  clientList = n;
-  xSemaphoreGive(clientMutex);
-}
-
-static void removeClient(int sockfd) {
-  xSemaphoreTake(clientMutex, portMAX_DELAY);
-  client_node_t **pp = &clientList;
-  while (*pp) {
-    if ((*pp)->sockfd == sockfd) {
-      client_node_t *tmp = *pp;
-      *pp = (*pp)->next;
-      free(tmp);
-      break;
-    }
-    pp = &(*pp)->next;
-  }
-  xSemaphoreGive(clientMutex);
-}
-
-// ========== HTTP handlers ==========
+// ================== Stream Handler ==================
 
 static esp_err_t stream_handler(httpd_req_t *req) {
-  httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=0123456789ABCDEF");
+  httpd_resp_set_type(req, STREAM_CONTENT_TYPE);
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-  httpd_resp_set_status(req, "200 OK");
-  httpd_resp_sendstr(req, "--0123456789ABCDEF\r\n");
-  // Queue client — this function returns immediately
-  int sockfd = httpd_req_to_sockfd(req);
-  addClient(sockfd);
-  ESP_LOGI("STREAM", "Client %d connected", sockfd);
+
+  Serial.printf("[STREAM] Client connected (fd=%d)\n", httpd_req_to_sockfd(req));
+
+  unsigned long lastSend = millis();
+
+  while (true) {
+    // Timeout: disconnect after 30s of no frame sent
+    if (millis() - lastSend > 30000) {
+      Serial.printf("[STREAM] Client %d timeout\n", httpd_req_to_sockfd(req));
+      break;
+    }
+
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+      delay(5);
+      continue;
+    }
+
+    char part_buf[64];
+    size_t hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, fb->len);
+
+    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) break;
+    if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
+
+    esp_camera_fb_return(fb);
+    lastSend = millis();
+
+    // Yield to other tasks between frames
+    delay(1);
+  }
+
+  Serial.printf("[STREAM] Client %d disconnected\n", httpd_req_to_sockfd(req));
   return ESP_OK;
 }
+
+// ================== Capture Handler ==================
 
 static esp_err_t capture_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "image/jpeg");
@@ -82,6 +74,8 @@ static esp_err_t capture_handler(httpd_req_t *req) {
   esp_camera_fb_return(fb);
   return ESP_OK;
 }
+
+// ================== IR / LED ==================
 
 static esp_err_t light_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "application/json");
@@ -109,15 +103,15 @@ static esp_err_t status_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
-// ========== Start HTTP server ==========
+// ================== Start Server ==================
 
 static void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
   config.max_open_sockets = 10;
+  config.max_uri_handlers = 10;
   config.lru_purge_enable = true;
-  config.global_user_ctx = NULL;
-  
+
   httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler };
   httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET, .handler = capture_handler };
   httpd_uri_t light_uri = { .uri = "/light", .method = HTTP_GET, .handler = light_handler };
@@ -152,15 +146,13 @@ static void connectWiFi() {
   }
 }
 
-// ========== Setup ==========
+// ================== Setup ==================
 
 void setup() {
   Serial.begin(115200);
-  delay(500); // allow serial monitor to connect
+  delay(500);
   Serial.println("\n[CAM] ESP32-S3 AI Camera booting...");
-  Serial.setDebugOutput(true);
 
-  // Camera config
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
@@ -198,10 +190,7 @@ void setup() {
   }
 
   esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) {
-    Serial.printf("[CAM] Init FAILED: 0x%x\n", err);
-    return;
-  }
+  if (err != ESP_OK) { Serial.printf("[CAM] Init FAILED: 0x%x\n", err); return; }
   Serial.println("[CAM] Init OK");
 
   sensor_t *s = esp_camera_sensor_get();
@@ -218,73 +207,22 @@ void setup() {
   s->set_gainceiling(s, (gainceiling_t)2);
   s->set_ae_level(s, 1);
 
-  // IR / LED
   pinMode(PIN_IR, OUTPUT); digitalWrite(PIN_IR, LOW);
   pinMode(PIN_LED, OUTPUT); digitalWrite(PIN_LED, LOW);
 
-  // WiFi
   WiFi.setHostname("esp32-cam");
   WiFi.setSleep(false);
   connectWiFi();
 
-  // Client mutex
-  clientMutex = xSemaphoreCreateMutex();
-
   Serial.println("[CAM] Ready");
 }
 
-// ========== Loop: broadcast frame to all clients ==========
+// ================== Loop ==================
 
 void loop() {
-  // WiFi reconnection
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[LOOP] WiFi lost, reconnecting...");
     connectWiFi();
-    delay(100);
-    return;
   }
-
-  // Capture one frame
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb) { delay(5); return; }
-
-  // Build boundary
-#define PART_BOUNDARY "0123456789ABCDEF"
-  char hdr[80];
-  int hlen = snprintf(hdr, sizeof(hdr),
-    "\r\n--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n",
-    PART_BOUNDARY, fb->len);
-
-  // Broadcast to all clients (non-blocking send)
-  xSemaphoreTake(clientMutex, portMAX_DELAY);
-  client_node_t **pp = &clientList;
-  while (*pp) {
-    client_node_t *c = *pp;
-    // Check idle timeout (15s)
-    if (esp_timer_get_time() - c->lastWrite > 15000000) {
-      httpd_sess_trigger_close(server, c->sockfd);
-      ESP_LOGI("STREAM", "Client %d timeout, removed", c->sockfd);
-      *pp = c->next; free(c); continue;
-    }
-    // Send boundary header
-    int sent = send(c->sockfd, hdr, hlen, MSG_DONTWAIT | MSG_NOSIGNAL);
-    if (sent < 0) {
-      httpd_sess_trigger_close(server, c->sockfd);
-      *pp = c->next; free(c); continue;
-    }
-    // Send frame data
-    sent = send(c->sockfd, (const char*)fb->buf, fb->len, MSG_DONTWAIT | MSG_NOSIGNAL);
-    if (sent < 0) {
-      httpd_sess_trigger_close(server, c->sockfd);
-      *pp = c->next; free(c); continue;
-    }
-    c->lastWrite = esp_timer_get_time();
-    pp = &(*pp)->next;
-  }
-  xSemaphoreGive(clientMutex);
-
-  esp_camera_fb_return(fb);
-
-  // ~15 fps limit
-  delay(66);
+  delay(5000);
 }
