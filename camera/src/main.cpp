@@ -1,5 +1,5 @@
-// ESP32-S3 AI Camera → JPEG capture server (non-blocking, multi-client)
-// Connects to ESP32-TEMP WiFi AP, serves camera stream
+// ESP32-S3 AI Camera → MJPEG stream server
+// Connects to user's WiFi AP, serves MJPEG stream + single-frame capture + light control
 // Board: DFRobot FireBeetle 2 ESP32-S3 AI Camera v1.1
 
 #include "esp_camera.h"
@@ -12,29 +12,62 @@ const char* AP_SSID = "OPhone 12";
 const char* AP_PASS = "qwer1234";
 
 // === DFRobot DFR1154 ESP32-S3 AI Camera pinout (OV3660) ===
-// Source: https://github.com/DFRobot/DFR1154_Examples
 #define CAM_PIN_pwdn    -1
 #define CAM_PIN_reset   -1
 #define CAM_PIN_xclk     5
 #define CAM_PIN_sccb_sda  8
 #define CAM_PIN_sccb_scl  9
-#define CAM_PIN_d7       4   // Y9
-#define CAM_PIN_d6       6   // Y8
-#define CAM_PIN_d5       7   // Y7
-#define CAM_PIN_d4      14   // Y6
-#define CAM_PIN_d3      17   // Y5
-#define CAM_PIN_d2      21   // Y4
-#define CAM_PIN_d1      18   // Y3
-#define CAM_PIN_d0      16   // Y2
+#define CAM_PIN_d7       4
+#define CAM_PIN_d6       6
+#define CAM_PIN_d5       7
+#define CAM_PIN_d4      14
+#define CAM_PIN_d3      17
+#define CAM_PIN_d2      21
+#define CAM_PIN_d1      18
+#define CAM_PIN_d0      16
 #define CAM_PIN_vsync    1
 #define CAM_PIN_href     2
 #define CAM_PIN_pclk    15
 
-// On-board peripherals
-#define PIN_IR   47   // IR fill light (active HIGH)
-#define PIN_LED   3   // White LED (active HIGH)
+#define PIN_IR   47
+#define PIN_LED   3
 
 WebServer server(80);
+
+// Stream task runs on core 0 — does NOT block WebServer on core 1
+volatile bool streamActive = false;
+
+void streamTask(void *arg) {
+  WiFiClient client = *(WiFiClient*)arg;
+  client.setTimeout(5);
+  client.print("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nAccess-Control-Allow-Origin: *\r\n\r\n");
+
+  streamActive = true;
+  Serial.println("[STREAM] Client connected");
+
+  while (client.connected() && streamActive) {
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) { delay(5); continue; }
+
+    client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
+    size_t written = client.write(fb->buf, fb->len);
+    client.print("\r\n");
+    esp_camera_fb_return(fb);
+
+    if (written != fb->len) {
+      Serial.println("[STREAM] Write mismatch, closing");
+      break;
+    }
+
+    // ~15 fps max, yield to other tasks
+    vTaskDelay(pdMS_TO_TICKS(33));
+  }
+
+  client.stop();
+  streamActive = false;
+  Serial.println("[STREAM] Client disconnected");
+  vTaskDelete(NULL);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -66,97 +99,87 @@ void setup() {
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.fb_count     = 2;
 
-  // PSRAM → higher resolution; no PSRAM → QVGA
+  // CIF 400x296 — 比 VGA 小 4 倍，每幀 ~8-15KB，編碼 ~15ms
   if (psramFound()) {
-    config.frame_size   = FRAMESIZE_VGA;  // 640x480
-    config.jpeg_quality = 12;
-    Serial.println("[CAM] PSRAM found, VGA mode");
+    config.frame_size   = FRAMESIZE_CIF;   // 400x296
+    config.jpeg_quality = 15;              // 0=best 63=worst, 15=good balance
+    Serial.println("[CAM] PSRAM found, CIF mode (400x296)");
   } else {
-    config.frame_size   = FRAMESIZE_QVGA;
-    config.jpeg_quality = 15;
+    config.frame_size   = FRAMESIZE_QVGA;  // 320x240
+    config.jpeg_quality = 18;
     config.fb_location  = CAMERA_FB_IN_DRAM;
-    Serial.println("[CAM] No PSRAM, QVGA mode");
+    Serial.println("[CAM] No PSRAM, QVGA mode (320x240)");
   }
 
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("[CAM] Init FAILED: 0x%x — 检查 pinout!\n", err);
-    Serial.println("[CAM] 对照 DFRobot 板子絲印修改 CAM_PIN_* 定义");
+    Serial.printf("[CAM] Init FAILED: 0x%x\n", err);
     return;
   }
   Serial.println("[CAM] Init OK");
 
-  // Sensor tuning
+  // Sensor tuning — 穩定自動曝光，減少運動時抖動
   sensor_t *s = esp_camera_sensor_get();
   s->set_vflip(s, 1);
   s->set_hmirror(s, 0);
+  s->set_brightness(s, 1);
+  s->set_contrast(s, 1);
+  s->set_saturation(s, 0);
+  // 固定白平衡模式 0=auto，但可試 1=sunny 減少切換延遲
+  s->set_whitebal(s, 1);
+  s->set_awb_gain(s, 1);
+  s->set_wb_mode(s, 0);  // 0=auto
+  // 自動曝光穩定
+  s->set_exposure_ctrl(s, 1);
+  s->set_aec2(s, 1);      // DSP auto exposure
+  s->set_gain_ctrl(s, 1);  // auto gain
+  s->set_agc_gain(s, 0);
+  s->set_gainceiling(s, (gainceiling_t)6);
 
-  // WiFi — connect to user's hotspot, use DHCP
-  // mDNS hostname: esp32-cam.local — main TEC board finds us by name
+  // WiFi
   WiFi.setHostname("esp32-cam");
   WiFi.begin(AP_SSID, AP_PASS);
   Serial.printf("[WiFi] Connecting to %s", AP_SSID);
-  int tries = 0;
-  while (WiFi.status() != WL_CONNECTED && tries < 40) {
+  for (int tries = 0; tries < 40; tries++) {
+    if (WiFi.status() == WL_CONNECTED) break;
     delay(500);
     Serial.print(".");
-    tries++;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\n[WiFi] FAILED — check AP is running");
+    Serial.println("\n[WiFi] FAILED");
     return;
   }
   Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
 
-  // mDNS — announce as esp32-cam.local
   if (MDNS.begin("esp32-cam")) {
     Serial.println("[MDNS] esp32-cam.local ready");
-  } else {
-    Serial.println("[MDNS] Failed to start");
   }
 
   // HTTP routes
-  server.on("/", HTTP_GET, []() {
-    String html = "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<title>ESP32-S3 Camera</title>"
-      "<style>body{margin:0;background:#1a1a2e;color:#e0e0e0;font-family:system-ui;display:flex;flex-direction:column;align-items:center;padding:10px}"
-      "img{max-width:100%;border-radius:8px;border:2px solid #334155}"
-      "h2{margin:10px 0}</style></head><body>"
-      "<h2>ESP32-S3 AI Camera</h2>"
-      "<img id='cam' src='/capture' onload=\"setTimeout(function(){document.getElementById('cam').src='/capture?r='+Date.now()},300)\"></body></html>";
-    server.send(200, "text/html", html);
-  });
 
-  // MJPEG stream — keeps connection open, pushes frames continuously
-  server.on("/stream", HTTP_GET, []() {
-    WiFiClient client = server.client();
-    client.setTimeout(5);
-    client.print("HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary=frame\r\nAccess-Control-Allow-Origin: *\r\n\r\n");
-    while (client.connected()) {
-      camera_fb_t *fb = esp_camera_fb_get();
-      if (!fb) { delay(5); continue; }
-      client.printf("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", fb->len);
-      client.write(fb->buf, fb->len);
-      client.print("\r\n");
-      esp_camera_fb_return(fb);
-    }
-  });
-
-  // Single-frame capture (non-blocking, supports multiple clients)
+  // Single-frame capture (always works, even when stream is active)
   server.on("/capture", HTTP_GET, []() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     camera_fb_t *fb = esp_camera_fb_get();
-    if (!fb) {
-      server.send(500, "text/plain", "Capture failed");
-      return;
-    }
+    if (!fb) { server.send(500, "text/plain", "Capture failed"); return; }
     server.sendHeader("Content-Disposition", "inline; filename=capture.jpg");
     server.send_P(200, "image/jpeg", (const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
   });
 
-  // IR + LED control (CORS headers for cross-origin from dashboard)
+  // MJPEG stream — spawns FreeRTOS task on core 0
+  server.on("/stream", HTTP_GET, []() {
+    if (streamActive) {
+      server.send(503, "text/plain", "Stream busy");
+      return;
+    }
+    WiFiClient client = server.client();
+    // Detach from WebServer — task will own this client
+    xTaskCreatePinnedToCore(streamTask, "stream", 4096, new WiFiClient(client), 1, NULL, 0);
+    // Don't send response — streamTask does it
+  });
+
+  // IR + LED
   pinMode(PIN_IR, OUTPUT);
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_IR, LOW);
