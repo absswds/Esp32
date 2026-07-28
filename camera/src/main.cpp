@@ -6,6 +6,7 @@
 #include <WiFi.h>
 #include <ESPmDNS.h>
 #include <esp_http_server.h>
+#include <lwip/sockets.h>
 
 // === WiFi ===
 const char* AP_SSID = "OPhone 12";
@@ -32,8 +33,16 @@ static esp_err_t stream_handler(httpd_req_t *req) {
   unsigned long lastSend = millis();
 
   while (true) {
-    // Timeout: disconnect after 30s of no frame sent
-    if (millis() - lastSend > 30000) {
+    // Probe: detect if client disconnected (refreshed tab / closed browser)
+    int fd = httpd_req_to_sockfd(req);
+    char probe = 0;
+    if (fd < 0 || send(fd, &probe, 0, MSG_DONTWAIT) < 0) {
+      Serial.printf("[STREAM] Client %d gone\n", fd);
+      break;
+    }
+
+    // Timeout: disconnect after 10s of no frame sent
+    if (millis() - lastSend > 10000) {
       Serial.printf("[STREAM] Client %d timeout\n", httpd_req_to_sockfd(req));
       break;
     }
