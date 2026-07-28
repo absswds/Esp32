@@ -57,11 +57,14 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     char part_buf[64];
     size_t hlen = snprintf(part_buf, sizeof(part_buf), STREAM_PART, fb->len);
 
-    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) break;
-    if (httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) break;
-    if (httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) break;
+    bool sent = true;
+    if (httpd_resp_send_chunk(req, STREAM_BOUNDARY, strlen(STREAM_BOUNDARY)) != ESP_OK) sent = false;
+    if (sent && httpd_resp_send_chunk(req, part_buf, hlen) != ESP_OK) sent = false;
+    if (sent && httpd_resp_send_chunk(req, (const char*)fb->buf, fb->len) != ESP_OK) sent = false;
 
+    // Always return the framebuffer, including on a slow/disconnected client.
     esp_camera_fb_return(fb);
+    if (!sent) break;
     lastSend = millis();
 
     // Yield to other tasks between frames
@@ -122,6 +125,7 @@ static void startCameraServer() {
   config.max_open_sockets = 4;
   config.max_uri_handlers = 2;
   config.lru_purge_enable = true;
+  config.send_wait_timeout = 1;  // slow clients must not block the camera for 5s
 
   httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler };
   httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET, .handler = capture_handler };
