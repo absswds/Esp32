@@ -644,17 +644,18 @@ function exportCSV(){
 function clearHist(){H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='',camTimer=null;
 function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
-function camErr(){clearTimeout(camTimer);var i=document.getElementById('camStream');i.style.display='none';document.getElementById('camOff').style.display='flex';if(camIP&&camEnabled)camTimer=setTimeout(camPoll,2000);}
+function camErr(){var i=document.getElementById('camStream');i.style.display='none';document.getElementById('camOff').style.display='flex';if(camIP&&camEnabled)camTimer=setTimeout(camPoll,2000);}
 function camPoll(){
+  clearTimeout(camTimer);
   if(!camIP||!camEnabled)return;
   var i=document.getElementById('camStream');
-  i.onload=function(){camOk();if(camEnabled)camTimer=setTimeout(camPoll,180);};
+  i.onload=camOk;
   i.onerror=camErr;
-  i.src='http://'+camIP+'/capture?r='+Date.now();
+  i.src='http://'+camIP+'/stream';
 }
 if(camEnabled)camPoll();
-function toggleIR(){irOn=!irOn;var u=camIP?'http://'+camIP+'/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
-function toggleLED(){ledOn=!ledOn;var u=camIP?'http://'+camIP+'/light?led='+(ledOn?1:0):'/light?led='+(ledOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
+function toggleIR(){irOn=!irOn;var u=camIP?'http://'+camIP+':81/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=!irOn;toast('IR 控制失敗')});}
+function toggleLED(){ledOn=!ledOn;var u=camIP?'http://'+camIP+':81/light?led='+(ledOn?1:0):'/light?led='+(ledOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=!ledOn;toast('LED 控制失敗')});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
