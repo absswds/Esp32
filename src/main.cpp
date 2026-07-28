@@ -1015,7 +1015,12 @@ void loop() {
     }
   }
 
-  if (!dsOk && millis() - lastScan >= 10000) { lastScan = millis(); doScan(); }
+  // Re-scan while any of the three known ROM addresses is missing.
+  // dsOk alone is insufficient: one detected probe must not stop recovery of the others.
+  if ((!dsOk || !nestOK || !roomOK || !ventOK) && millis() - lastScan >= 10000) {
+    lastScan = millis();
+    doScan();
+  }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
   if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 
