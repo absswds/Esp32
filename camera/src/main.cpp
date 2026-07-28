@@ -137,6 +137,7 @@ static void startCameraServer() {
   // Server 2: Control (port 81) — always responsive, independent control task
   httpd_config_t ctrl_config = HTTPD_DEFAULT_CONFIG();
   ctrl_config.server_port = 81;
+  ctrl_config.ctrl_port = 32769;  // must differ from stream server's default 32768
   ctrl_config.max_open_sockets = 4;
   ctrl_config.max_uri_handlers = 4;
   ctrl_config.lru_purge_enable = true;
