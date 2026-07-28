@@ -282,9 +282,9 @@ void handleData() {
   }
   char buf[800];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"ir\":%d,\"led\":%d,\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), lightIR, lightLED, targetTemp, hysteresis, safeMin, safeMax, ventMax);
   server.send(200, "application/json", buf);
 }
 
@@ -647,8 +647,8 @@ function camOk(){var i=document.getElementById('camStream');i.style.display='';d
 function camErr(){document.getElementById('camStream').style.display='none';document.getElementById('camOff').style.display='flex';if(camIP){setTimeout(camPoll,5000);}}
 function camPoll(){if(!camIP)return;document.getElementById('camStream').src='http://'+camIP+'/stream';}
 if(camEnabled)camPoll();
-function toggleIR(){var p=irOn;irOn=!irOn;document.getElementById('irBtn').style.background=irOn?'#f59e0b':'';var u=camIP?'http://'+camIP+'/light?ir='+(irOn?1:0):'/light?ir='+(irOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=p;document.getElementById('irBtn').style.background=p?'#f59e0b':'';toast('IR 控制失敗')});}
-function toggleLED(){var p=ledOn;ledOn=!ledOn;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':'';var u=camIP?'http://'+camIP+'/light?led='+(ledOn?1:0):'/light?led='+(ledOn?1:0);fetch(u).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=p;document.getElementById('ledBtn').style.background=p?'#f59e0b':'';toast('LED 控制失敗')});}
+function toggleIR(){var p=irOn;irOn=!irOn;document.getElementById('irBtn').style.background=irOn?'#f59e0b':'';fetch('/light?ir='+(irOn?1:0)).then(function(r){return r.json()}).then(function(d){irOn=!!d.ir;document.getElementById('irBtn').style.background=irOn?'#f59e0b':''}).catch(function(e){irOn=p;document.getElementById('irBtn').style.background=p?'#f59e0b':'';toast('IR 控制失敗')});}
+function toggleLED(){var p=ledOn;ledOn=!ledOn;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':'';fetch('/light?led='+(ledOn?1:0)).then(function(r){return r.json()}).then(function(d){ledOn=!!d.led;document.getElementById('ledBtn').style.background=ledOn?'#f59e0b':''}).catch(function(e){ledOn=p;document.getElementById('ledBtn').style.background=p?'#f59e0b':'';toast('LED 控制失敗')});}
 async function doPoll(){
   try{
     var r=await fetch('/data'),d=await r.json();
@@ -692,6 +692,7 @@ async function doPoll(){
     var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     if(!camEnabled){document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
+    document.getElementById('irBtn').style.background=d.ir?'#f59e0b':'';document.getElementById('ledBtn').style.background=d.led?'#f59e0b':'';
     H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
     allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
