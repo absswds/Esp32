@@ -16,6 +16,7 @@ const char* AP_PASS = "qwer1234";
 #define PIN_LED   3
 
 static httpd_handle_t server = NULL;
+static httpd_handle_t server_ctrl = NULL;
 
 #define PART_BOUNDARY "123456789000000000000987654321"
 static const char* STREAM_CONTENT_TYPE = "multipart/x-mixed-replace;boundary=" PART_BOUNDARY;
@@ -115,25 +116,40 @@ static esp_err_t status_handler(httpd_req_t *req) {
 // ================== Start Server ==================
 
 static void startCameraServer() {
+  // Server 1: Stream (port 80) — blocking handler, owns its own control task
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
-  config.max_open_sockets = 10;
-  config.max_uri_handlers = 10;
+  config.max_open_sockets = 4;
+  config.max_uri_handlers = 2;
   config.lru_purge_enable = true;
 
   httpd_uri_t stream_uri = { .uri = "/stream", .method = HTTP_GET, .handler = stream_handler };
   httpd_uri_t capture_uri = { .uri = "/capture", .method = HTTP_GET, .handler = capture_handler };
-  httpd_uri_t light_uri = { .uri = "/light", .method = HTTP_GET, .handler = light_handler };
-  httpd_uri_t status_uri = { .uri = "/status", .method = HTTP_GET, .handler = status_handler };
 
   if (httpd_start(&server, &config) == ESP_OK) {
     httpd_register_uri_handler(server, &stream_uri);
     httpd_register_uri_handler(server, &capture_uri);
-    httpd_register_uri_handler(server, &light_uri);
-    httpd_register_uri_handler(server, &status_uri);
-    Serial.println("[HTTP] Server started on port 80");
+    Serial.println("[HTTP] Stream server on port 80");
   } else {
-    Serial.println("[HTTP] Failed to start server!");
+    Serial.println("[HTTP] Stream server failed!");
+  }
+
+  // Server 2: Control (port 81) — always responsive, independent control task
+  httpd_config_t ctrl_config = HTTPD_DEFAULT_CONFIG();
+  ctrl_config.server_port = 81;
+  ctrl_config.max_open_sockets = 4;
+  ctrl_config.max_uri_handlers = 4;
+  ctrl_config.lru_purge_enable = true;
+
+  httpd_uri_t light_uri = { .uri = "/light", .method = HTTP_GET, .handler = light_handler };
+  httpd_uri_t status_uri = { .uri = "/status", .method = HTTP_GET, .handler = status_handler };
+
+  if (httpd_start(&server_ctrl, &ctrl_config) == ESP_OK) {
+    httpd_register_uri_handler(server_ctrl, &light_uri);
+    httpd_register_uri_handler(server_ctrl, &status_uri);
+    Serial.println("[HTTP] Control server on port 81");
+  } else {
+    Serial.println("[HTTP] Control server failed!");
   }
 }
 

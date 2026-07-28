@@ -943,9 +943,9 @@ void setup() {
     if (server.hasArg("ir"))  lightIR  = server.arg("ir").toInt();
     if (server.hasArg("led")) lightLED = server.arg("led").toInt();
 
-    // 盡力同步到相機（阻塞但不會影響按鈕響應）
+    // 盡力同步到相機控制端口（port 81，不受串流阻塞）
     WiFiClient c;
-    if (c.connect(camIP, 80, camIPConfirmed ? 1000 : 200)) {
+    if (c.connect(camIP, 81, camIPConfirmed ? 500 : 200)) {
       String q = "";
       if (server.hasArg("ir"))  q += "ir=" + server.arg("ir");
       if (server.hasArg("led")) { if (q.length()) q += "&"; q += "led=" + server.arg("led"); }
