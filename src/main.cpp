@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WebServer.h>
+#include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
@@ -775,6 +776,8 @@ poll();
 </html>)HTML";
 
 unsigned long lastOled = 0;
+unsigned long lastOledCheck = 0;
+bool oledOnline = false;
 
 void updateOLED() {
   u8g2.firstPage();
@@ -902,8 +905,22 @@ void setup() {
   EEPROM.begin(64);
   loadState();
 
+  // 明確設定 I2C 腳位並掃描匯流排
+  Wire.begin(21, 22);  // SDA=21, SCL=22
+  Serial.print("[I2C] Scanning bus...");
+  int i2cCount = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf(" 0x%02X", addr);
+      i2cCount++;
+    }
+  }
+  Serial.printf(" (%d device(s))\n", i2cCount);
+
   u8g2.begin();
   u8g2.setContrast(128);
+  oledOnline = true;
   Serial.println("[OLED] 就緒");
 
   // 優先連自家 WiFi，失敗才開 AP 備用
@@ -1022,7 +1039,20 @@ void loop() {
     doScan();
   }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
-  if (millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
+  // 定時檢查 OLED：拔掉再插回去也能自動恢復
+  if (millis() - lastOledCheck >= 5000) {
+    lastOledCheck = millis();
+    Wire.beginTransmission(0x3C);  // SSD1306 典型位址
+    bool found = (Wire.endTransmission() == 0);
+    if (found && !oledOnline) {
+      Serial.println("[OLED] 偵測到螢幕，重新初始化");
+      if (u8g2.begin()) { oledOnline = true; u8g2.setContrast(128); }
+    } else if (!found && oledOnline) {
+      Serial.println("[OLED] 螢幕離線");
+      oledOnline = false;
+    }
+  }
+  if (oledOnline && millis() - lastOled >= 2000) { lastOled = millis(); updateOLED(); }
 
   if (stateSavePending && (long)(millis() - stateSaveDue) >= 0) {
     saveState();
