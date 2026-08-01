@@ -480,13 +480,16 @@ WiFi AP 模式，Port 80，IP `192.168.4.1`。
 | `ventMax` | 30–80 | 出風口斷電閾值 |
 | `nestOff` | -5~5 | 巢穴感測器校準偏移 °C |
 | `ventOff` | -5~5 | 出風口感測器校準偏移 °C |
-| `wifi` | 0/1 | **WiFi 模式**：0=純 AP（默認，最穩定），1=STA+AP备援（先連熱點，失敗切 AP）。切換後系統自動重啟。 |
+| `wifi` | 0/1 | **WiFi 模式**：0=純 AP（默認，最穩定），1=STA+AP备援（先連指定 WiFi，失敗切 AP）。切換後系統自動重啟。 |
+| `ssid` | 字串 | 搭配 `wifi=1`：要連接的 WiFi 名稱，存 EEPROM[35] |
+| `pass` | 字串 | 搭配 `wifi=1`：WiFi 密碼，存 EEPROM[67] |
 
 參數可組合。範例：
 
 ```
 POST /control?system=1&targetTemp=28.0&hysteresis=0.5
-POST /control?wifi=1   // 切到 STA+AP 备援，自動重啟
+POST /control?wifi=1&ssid=MyWiFi&pass=12345678   // 切到 STA 模式連 MyWiFi，自動重啟
+POST /control?wifi=0                             // 回到純 AP 模式，自動重啟
 ```
 
 ### `GET /test` — 手動測試

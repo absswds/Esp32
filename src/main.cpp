@@ -81,6 +81,8 @@ const int FAN_AFTERRUN_SPEED = 200;  // ~78%
 // #16 感測器校準偏移
 float nestOffset = 0, roomOffset = 0, ventOffset = 0;
 uint8_t wifiMode = 0; // 0=AP, 1=STA+AP备援
+char wifiSSID[33] = "";  // STA 模式要连的网络名（默认空 = 用内置 OPhone 12）
+char wifiPass[65] = "";  // STA 模式密码
 
 // 前置宣告
 void saveState();
@@ -342,6 +344,15 @@ void handleControl() {
   }
   if (server.hasArg("wifi")) {
     uint8_t m = server.arg("wifi").toInt();
+    // 切换 STA 模式时，可用 ssid/pass 指定要连的网络
+    if (server.hasArg("ssid") && server.arg("ssid").length() > 0) {
+      strncpy(wifiSSID, server.arg("ssid").c_str(), sizeof(wifiSSID) - 1);
+      wifiSSID[sizeof(wifiSSID) - 1] = '\0';
+    }
+    if (server.hasArg("pass")) {
+      strncpy(wifiPass, server.arg("pass").c_str(), sizeof(wifiPass) - 1);
+      wifiPass[sizeof(wifiPass) - 1] = '\0';
+    }
     setWifiModeAndRestart(m);
     // 不会执行到这里，restart 了
   }
@@ -372,6 +383,8 @@ void saveState() {
   EEPROM.put(26, roomOffset);
   EEPROM.put(30, ventOffset);
   EEPROM.write(34, wifiMode);      // WiFi 模式 0=AP, 1=STA+AP备援
+  EEPROM.put(35, wifiSSID);        // 35+32=67
+  EEPROM.put(67, wifiPass);        // 67+64=131
   EEPROM.commit();
   Serial.println("[EEPROM] 狀態已保存");
 }
@@ -393,9 +406,12 @@ void loadState() {
   EEPROM.get(30, ventOffset);
   wifiMode = EEPROM.read(34);
   if (wifiMode > 1) wifiMode = 0;
-  Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f WiFi=%s\n",
+  EEPROM.get(35, wifiSSID);
+  EEPROM.get(67, wifiPass);
+  if (strlen(wifiSSID) == 0) strcpy(wifiSSID, "OPhone 12");  // 默认热点
+  Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f WiFi=%s(%s)\n",
     systemOn, targetTemp, hysteresis, safeMin, safeMax, ventMax,
-    wifiMode ? "STA+AP备援" : "純AP");
+    wifiMode ? "STA+AP备援" : "純AP", wifiSSID);
 }
 
 void setWifiModeAndRestart(uint8_t mode) {
@@ -733,7 +749,7 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var b=document.getElementById('sysBtn'),on=b.classList.contains('off');b.className=on?'btn on':'btn off';b.textContent=on?'停止系統':'開啟系統';fetch('/control?system='+(on?1:0),{method:'POST'});doPoll();}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'});doPoll();}
-function toggleWifi(){var w=document.getElementById('wifiBtn').textContent.indexOf('純AP')>=0?1:0;if(confirm('切換 WiFi 模式為 '+(w?'STA+AP备援':'純AP')+'？\n\n切換後系統會自動重啟，請注意重新連接。')){fetch('/control?wifi='+w,{method:'POST'});}}
+function toggleWifi(){var w=document.getElementById('wifiBtn').textContent.indexOf('純AP')>=0?1:0;if(w){var s=prompt('輸入要連接的 WiFi 名稱（SSID）：','OPhone 12');if(s===null)return;var p=prompt('輸入 WiFi 密碼：','');if(p===null)return;if(confirm('切換到 STA+AP 备援，連接「'+s+'」並重啟？')){fetch('/control?wifi=1&ssid='+encodeURIComponent(s)+'&pass='+encodeURIComponent(p),{method:'POST'});}}else{if(confirm('切換到純 AP 模式並重啟？')){fetch('/control?wifi=0',{method:'POST'});}}}
 function queueControl(key,query){clearTimeout(controlTimers[key]);controlTimers[key]=setTimeout(function(){fetch('/control?'+query,{method:'POST'});},300);}
 function setTGT(v){
   v=parseFloat(v);
@@ -924,7 +940,7 @@ void setup() {
   doScan();
 
   // #31 斷電恢復：從 EEPROM 讀取上次狀態
-  EEPROM.begin(64);
+  EEPROM.begin(256);
   loadState();
 
   // 明確設定 I2C 腳位並掃描匯流排
@@ -948,10 +964,10 @@ void setup() {
   WiFi.setHostname("esp32-tec");
 
   if (wifiMode == 1) {
-    // 模式1: 先連熱點，失敗切 AP 备援
+    // 模式1: 先連指定 WiFi（存 EEPROM），失敗切 AP 备援
     WiFi.mode(WIFI_AP_STA);
-    WiFi.begin("OPhone 12", "qwer1234");
-    Serial.print("[WiFi] 模式=STA+AP备援, 連 OPhone 12");
+    WiFi.begin(wifiSSID, wifiPass);
+    Serial.printf("[WiFi] 模式=STA+AP备援, 連 %s", wifiSSID);
     for (int wcnt = 0; wcnt < 20; wcnt++) {
       if (WiFi.status() == WL_CONNECTED) break;
       esp_task_wdt_reset();
