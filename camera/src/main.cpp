@@ -11,6 +11,8 @@
 // === WiFi ===
 const char* AP_SSID = "OPhone 12";
 const char* AP_PASS = "qwer1234";
+const char* FALLBACK_SSID = "ESP32-TEMP";  // 热点失败时连主 ESP 的 AP
+const char* FALLBACK_PASS = "12345678";
 
 #define PIN_IR   47
 #define PIN_LED   3
@@ -160,12 +162,26 @@ static void startCameraServer() {
 
 static void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) return;
+
+  // 第一优先：手机热点
   WiFi.begin(AP_SSID, AP_PASS);
   Serial.printf("[WiFi] Connecting to %s", AP_SSID);
-  for (int tries = 0; tries < 40; tries++) {
+  for (int tries = 0; tries < 20; tries++) {  // 10s
     if (WiFi.status() == WL_CONNECTED) break;
     delay(500); Serial.print(".");
   }
+
+  // 第二优先：热点失败 → 主 ESP 的 AP（esp32-tec 不在热点上时也能访问）
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.disconnect();
+    Serial.printf("\n[WiFi] Fallback to %s", FALLBACK_SSID);
+    WiFi.begin(FALLBACK_SSID, FALLBACK_PASS);
+    for (int tries = 0; tries < 20; tries++) {  // 10s
+      if (WiFi.status() == WL_CONNECTED) break;
+      delay(500); Serial.print(".");
+    }
+  }
+
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("\n[WiFi] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
     if (server) { httpd_stop(server); server = NULL; }
