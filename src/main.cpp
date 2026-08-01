@@ -80,11 +80,13 @@ const int FAN_AFTERRUN_SPEED = 200;  // ~78%
 
 // #16 感測器校準偏移
 float nestOffset = 0, roomOffset = 0, ventOffset = 0;
+uint8_t wifiMode = 0; // 0=AP, 1=STA+AP备援
 
 // 前置宣告
 void saveState();
 void loadState();
 void scheduleStateSave();
+void setWifiModeAndRestart(uint8_t mode);
 
 void setFan(int s) {
   fanSpeed = constrain(s, 0, 255);
@@ -283,9 +285,9 @@ void handleData() {
   }
   char buf[800];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode);
   server.send(200, "application/json", buf);
 }
 
@@ -338,6 +340,11 @@ void handleControl() {
     ventOffset = constrain(server.arg("ventOff").toFloat(), -5, 5);
     changed = true;
   }
+  if (server.hasArg("wifi")) {
+    uint8_t m = server.arg("wifi").toInt();
+    setWifiModeAndRestart(m);
+    // 不会执行到这里，restart 了
+  }
   if (changed) {
     if (server.hasArg("system")) saveState();
     else scheduleStateSave();
@@ -364,6 +371,7 @@ void saveState() {
   EEPROM.put(22, nestOffset);
   EEPROM.put(26, roomOffset);
   EEPROM.put(30, ventOffset);
+  EEPROM.write(34, wifiMode);      // WiFi 模式 0=AP, 1=STA+AP备援
   EEPROM.commit();
   Serial.println("[EEPROM] 狀態已保存");
 }
@@ -383,9 +391,18 @@ void loadState() {
   EEPROM.get(22, nestOffset);
   EEPROM.get(26, roomOffset);
   EEPROM.get(30, ventOffset);
-  if (systemOn) startAll();
-  Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f\n",
-    systemOn, targetTemp, hysteresis, safeMin, safeMax, ventMax);
+  wifiMode = EEPROM.read(34);
+  if (wifiMode > 1) wifiMode = 0;
+  Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f WiFi=%s\n",
+    systemOn, targetTemp, hysteresis, safeMin, safeMax, ventMax,
+    wifiMode ? "STA+AP备援" : "純AP");
+}
+
+void setWifiModeAndRestart(uint8_t mode) {
+  wifiMode = mode;
+  saveState();
+  delay(200);
+  ESP.restart();
 }
 
 void handleDiag() {
@@ -542,6 +559,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   </div>
   <div class="pills" style="margin-top:6px">
     <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
+    <button class="act-btn" id="wifiBtn" onclick="toggleWifi()" style="margin-left:6px;background:rgba(139,92,246,.15);color:#a78bfa">WiFi: 純AP</button>
   </div>
 </div>
 <div class="sec">
@@ -691,6 +709,9 @@ async function doPoll(){
     document.getElementById('modeBtn').textContent=d.manualMode?'切換自動模式':'切換手動模式';
     document.getElementById('modeBtn').style.background=d.manualMode?'rgba(239,68,68,.15)':'rgba(20,184,166,.15)';
     document.getElementById('modeBtn').style.color=d.manualMode?'var(--r)':'var(--c)';
+    document.getElementById('wifiBtn').textContent=d.wifiMode?'WiFi: STA+AP备援':'WiFi: 純AP';
+    document.getElementById('wifiBtn').style.background=d.wifiMode?'rgba(245,158,11,.15)':'rgba(139,92,246,.15)';
+    document.getElementById('wifiBtn').style.color=d.wifiMode?'#fbbf24':'#a78bfa';
     if(!fm){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
@@ -712,6 +733,7 @@ async function doPoll(){
 }
 function toggleSys(){fm=false;var b=document.getElementById('sysBtn'),on=b.classList.contains('off');b.className=on?'btn on':'btn off';b.textContent=on?'停止系統':'開啟系統';fetch('/control?system='+(on?1:0),{method:'POST'});doPoll();}
 function toggleMode(){var m=document.getElementById('modeBtn').textContent.indexOf('手動')>=0?1:0;fetch('/control?manual='+m,{method:'POST'});doPoll();}
+function toggleWifi(){var w=document.getElementById('wifiBtn').textContent.indexOf('純AP')>=0?1:0;if(confirm('切換 WiFi 模式為 '+(w?'STA+AP备援':'純AP')+'？\n\n切換後系統會自動重啟，請注意重新連接。')){fetch('/control?wifi='+w,{method:'POST'});}}
 function queueControl(key,query){clearTimeout(controlTimers[key]);controlTimers[key]=setTimeout(function(){fetch('/control?'+query,{method:'POST'});},300);}
 function setTGT(v){
   v=parseFloat(v);
@@ -923,36 +945,43 @@ void setup() {
   oledOnline = true;
   Serial.println("[OLED] 就緒");
 
-  // 優先連自家 WiFi，失敗才開 AP 備用
-  WiFi.mode(WIFI_AP_STA);
   WiFi.setHostname("esp32-tec");
-  WiFi.begin("OPhone 12", "qwer1234");
-  Serial.print("[WiFi] 連接到 OPhone 12");
-  for (int wcnt = 0; wcnt < 20; wcnt++) {
-    if (WiFi.status() == WL_CONNECTED) break;
-    esp_task_wdt_reset();
-    delay(500);
-    Serial.print(".");
-  }
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("\n[WiFi] STA IP: %s\n", WiFi.localIP().toString().c_str());
-    // mDNS: 找相機 esp32-cam.local
-    if (MDNS.begin("esp32-tec")) {
-      Serial.println("[MDNS] esp32-tec.local ready");
-      IPAddress resolved = MDNS.queryHost("esp32-cam");
-      if (resolved != INADDR_NONE) {
-        camIP = resolved;
-        camIPConfirmed = true;
-        lastCamResolve = millis();
-        Serial.printf("[MDNS] esp32-cam → %s\n", camIP.toString().c_str());
-      } else {
-        Serial.printf("[MDNS] esp32-cam not found, using %s\n", camIP.toString().c_str());
+
+  if (wifiMode == 1) {
+    // 模式1: 先連熱點，失敗切 AP 备援
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.begin("OPhone 12", "qwer1234");
+    Serial.print("[WiFi] 模式=STA+AP备援, 連 OPhone 12");
+    for (int wcnt = 0; wcnt < 20; wcnt++) {
+      if (WiFi.status() == WL_CONNECTED) break;
+      esp_task_wdt_reset();
+      delay(500);
+      Serial.print(".");
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("\n[WiFi] STA IP: %s\n", WiFi.localIP().toString().c_str());
+      if (MDNS.begin("esp32-tec")) {
+        Serial.println("[MDNS] esp32-tec.local ready");
+        IPAddress resolved = MDNS.queryHost("esp32-cam");
+        if (resolved != INADDR_NONE) {
+          camIP = resolved;
+          camIPConfirmed = true;
+          lastCamResolve = millis();
+          Serial.printf("[MDNS] esp32-cam → %s\n", camIP.toString().c_str());
+        } else {
+          Serial.printf("[MDNS] esp32-cam not found, using %s\n", camIP.toString().c_str());
+        }
       }
+    } else {
+      Serial.println("\n[WiFi] STA 失敗，開 AP 备援");
+      WiFi.softAP("ESP32-TEMP", "12345678");
+      Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
     }
   } else {
-    Serial.println("\n[WiFi] 連線失敗，切換 AP 模式");
+    // 模式0: 純 AP（默認，最穩定）
+    WiFi.mode(WIFI_AP);
     WiFi.softAP("ESP32-TEMP", "12345678");
-    Serial.printf("[WiFi] AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    Serial.printf("[WiFi] 模式=純AP, IP: %s\n", WiFi.softAPIP().toString().c_str());
   }
 
   server.on("/", handleRoot);
