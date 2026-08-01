@@ -383,8 +383,8 @@ void saveState() {
   EEPROM.put(26, roomOffset);
   EEPROM.put(30, ventOffset);
   EEPROM.write(34, wifiMode);      // WiFi 模式 0=AP, 1=STA+AP备援
-  EEPROM.put(35, wifiSSID);        // 35+32=67
-  EEPROM.put(67, wifiPass);        // 67+64=131
+  EEPROM.put(35, wifiSSID);        // 35+33=68
+  EEPROM.put(68, wifiPass);        // 68+65=133
   EEPROM.commit();
   Serial.println("[EEPROM] 狀態已保存");
 }
@@ -407,8 +407,12 @@ void loadState() {
   wifiMode = EEPROM.read(34);
   if (wifiMode > 1) wifiMode = 0;
   EEPROM.get(35, wifiSSID);
-  EEPROM.get(67, wifiPass);
-  if (strlen(wifiSSID) == 0) strcpy(wifiSSID, "OPhone 12");  // 默认热点
+  EEPROM.get(68, wifiPass);
+  // EEPROM 未写过时是 0xFF，不是 '\0'——两种情况都回退默认
+  if (wifiSSID[0] == '\0' || (uint8_t)wifiSSID[0] == 0xFF) {
+    strcpy(wifiSSID, "OPhone 12");
+    strcpy(wifiPass, "qwer1234");
+  }
   Serial.printf("[EEPROM] 已恢復: sys=%d target=%.1f hyst=%.2f safe=[%.0f-%.0f] ventMax=%.0f WiFi=%s(%s)\n",
     systemOn, targetTemp, hysteresis, safeMin, safeMax, ventMax,
     wifiMode ? "STA+AP备援" : "純AP", wifiSSID);
