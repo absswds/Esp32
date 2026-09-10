@@ -142,7 +142,7 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 ### 主 ESP 程式結構
 
 ```
-src/main.cpp  (單一 Arduino sketch，約 815 行)
+src/main.cpp  (單一 Arduino sketch，1120 行)
 
 ├── 硬體層
 │   ├── OneWire + DallasTemperature → 3×DS18B20
