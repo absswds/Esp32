@@ -5,12 +5,16 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'test/**'
       - 'platformio.ini'
+      - '.github/workflows/**'
   pull_request:
     branches: [main]
     paths:
       - 'src/**'
+      - 'test/**'
       - 'platformio.ini'
+      - '.github/workflows/**'
 
 jobs:
   build:
@@ -25,5 +29,7 @@ jobs:
           key: ${{ runner.os }}-pio
       - name: Install PlatformIO
         run: pip install platformio
-      - name: Build
-        run: pio run
+      - name: Build firmware
+        run: pio run -e esp32dev
+      - name: Run native unit tests
+        run: pio test -e native
