@@ -35,7 +35,8 @@ pio test -e native
 
 > **前置依赖**：`platform = native` 依赖系统已安装的 C/C++ 编译器（`gcc` / `g++`）。
 > Windows 上需先装 MinGW-w64 或 MSYS2；macOS 装 Xcode Command Line Tools；Linux 装 `build-essential`。
-> 本仓库当前所在的 Windows 主机**未装 g++**，因此 `pio test -e native` 会因 `gcc 不是内部或外部命令` 报错退出——
+> 本仓库当前所在的 Windows 主机在 2026-08-13 审查时**未装 g++**，当时 `pio test -e native` 会因 `gcc 不是内部或外部命令` 报错退出——
+> mingw64 是之后装的（见上节 37/37 通过记录），时间线如此，两处都成立。
 > 这不是测试本身的问题，安装编译器后即可正常运行。项目首次运行 `pio test` 会自动拉取 `native` 平台与 `Unity@2.6.1` 库。
 
 ```bash
