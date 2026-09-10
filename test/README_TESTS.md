@@ -4,8 +4,8 @@
 
 ```bash
 # 前置：Windows 需要 gcc/g++（native 测试环境用本机编译器）。
-# 已安装：C:\Users\binbi\tools\mingw64（winlibs GCC 16.2.0）
-export PATH="/c/Users/binbi/tools/mingw64/bin:$PATH"
+# 例：winlibs MinGW-w64（本机示例 C:\Users\binbi\tools\mingw64，GCC 16.2.0；请按自己机器路径调整）
+export PATH="/c/Users/binbi/tools/mingw64/bin:$PATH"   # ← 换成你机器上的安装路径
 cd D:/binbi/Desktop/test
 pio test -e native
 # 结果：37/37 PASSED（1.5s）
