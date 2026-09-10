@@ -27,7 +27,7 @@ pio test -e native
 | `test/test_pure_logic.cpp` | **可执行测试** | 镜像若干**无 Arduino 依赖的纯算法片段**（sameAddr、EMA 滤波、温度合法化、NaN 去抖、EEPROM 地址布局契约），用标准 C++17 直接编译验证 |
 | `test/test_control_policy.cpp` | 骨架 + mock | 复刻 `controlTemp()` 状态机为可测逻辑结构；提供 `mock_setFan` / `mock_setTecPwm` / `mock_emergencyStop` / `mock_saveState` 等替身，断言输入输出对 |
 | `test/test_eeprom_config.cpp` | 骨架 + 桩 | 复刻 `saveState()` / `loadState()` 与 `handleControl()` 的 constrain 范围，验证往返一致性与越界 clamp |
-| `test/mocks/Arduino.h` + `Arduino.cpp` | mock 桩 | 提供 `Serial` / `EEPROM` / `digitalRead/Write` / `ledcWrite` / `millis` 等 Arduino API 占卜行为；`String` / `delay` 类最小兼容实现 |
+| `test/mocks/Arduino.h` | mock 桩（header-only） | 提供 `Serial` / `EEPROM` / `digitalRead/Write` / `ledcWrite` / `millis` 等 Arduino API 占位行为；`String` / `delay` 类最小兼容实现 |
 
 ---
 
