@@ -170,5 +170,5 @@ void test_clamp_offset_signed(void) {
     TEST_ASSERT_EQUAL_FLOAT(0.0f, clampOffset(0.0f));
 }
 
-// ⚠ TODO（待 src 重构后补）：safeMin < safeMax 交叉校验、wifiMode=1 且 SSID 空行为、
+// 注（2026-09-10 收尾鎖版）：以下三項當時未補，鎖版凍結不再重構，保留現狀。
 //                                       非数字输入 toFloat() 返回 0 被错误 clamp 到下限（见 CODE_REVIEW）
