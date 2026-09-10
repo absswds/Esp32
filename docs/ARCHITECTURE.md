@@ -225,7 +225,7 @@ guard 3  nestT < safeMin || nestT > safeMax           → setTecPwm(0)+风扇 25
 
 **重要：** 处于死区时如检测到刚从制冷/加热切出（`cooling||heating` 仍为 true），启动 `fanAfterRunTimer`；之后 10 秒内每帧保持 `FAN_AFTERRUN_SPEED=200`(~78%)，超过 10 秒关扇。
 
-> ⚠️ 注意 README 提到"制冷时风扇以 52% 运行"的实测发现，但**当前 `controlTemp()` 中制冷分支仍写 `setFan(255)` 全速**（`main.cpp:201`）。这与 CLAUDE.md "实测修正"说明不符——这是一个已知的代码与文档偏差，详 [CODE_REVIEW.md] 与 CONFIG_GUIDE 的注释说明。
+> ⚠️ 注意 README 提到"製冷時風扇應以 52% 運行"的實測發現，但**當前 `controlTemp()` 中製冷分支仍寫 `setFan(255)` 全速**（`main.cpp:199-204`）——這是已知的代碼與文檔偏差，鎖版凍結不改，演示時手動設 52%，詳 [LIMITATIONS.md](../LIMITATIONS.md) #34 與 [CONFIG_GUIDE.md](CONFIG_GUIDE.md) §2.3。
 
 ### 6.2 风扇 after-run 状态机（`loop()` 内独立）
 
@@ -277,7 +277,7 @@ loop 中 if pending && (long)(millis()-due)>=0 → saveState(); pending=false
 主 ESP 没有显式多任务。所有控制、感测、HTTP、显示都在 `loop()` 串行执行。Arduino-ESP32 core 在背后运行 WiFi stack、LWIP、mDNS 等内部 task，调用回调时（如 `/control`）会在 core 的 task 上下文上回调，由 `WebServer` 内部把请求转交给 user handler——**不是中断**。
 
 **关键的时序要求：**
-- `loop()` 顶部 `esp_task_wdt_reset()` 必须在 3 秒内执行（实际配置 `esp_task_wdt_init(7, true)` 是 7 秒，注意 `main.cpp:933` 写 7 而注释 CLAUDE.md 说 3 秒——见 CODE_REVIEW）。
+- `loop()` 顶部 `esp_task_wdt_reset()` 必须在 3 秒内执行（实际配置 `esp_task_wdt_init(7, true)` 是 7 秒，注意 `main.cpp:933` 写 7 而舊註釋說 3 秒——以代碼 7 秒為準）。
 - OneWire 时序由 `paulstoffregen/OneWire` 库用 `micros()` 软件循环保证，对 WiFi 中断极敏感。基于此 README 强调"`doScan()` 必须 `WiFi.softAP()` 之前执行"。
 - HTTP 处理是非阻塞的，单个请求不应 >100ms，否则后续 IO 会被卡。`handleLight` 中的相机代理同步连接最长等 2 秒，可能影响响应性（用 `esp_task_wdt_reset()` 中间喂狗避免重启）。
 
@@ -316,7 +316,7 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 | # | 故障 | 检测位置 | 当前处置 | 残余风险 |
 |---|------|----------|----------|----------|
 | F1 | 任一 DS18B20 断线（NAN） | `controlTemp()` guard1 + `loop()` 双 NAN 守卫 | nanCount≥3 紧急断电 | 单次瞬态跳变被忽略（设计），但 6s 内仍可能在错误读值下控制 |
-| F2 | OneWire 总线无设备（`!dsOk`） | `doScan()` `cnt==0` | 重新 doScan 每 10s | **无紧急断电**：`readSensor()` L225 顶端 `if(!dsOk) return` 直接退出，`controlTemp()` 不执行，旧 TEC 状态可能残留（CODE_REVIEW CR-03，未修） |
+| F2 | OneWire 总线无设备（`!dsOk`） | `doScan()` `cnt==0` | 重新 doScan 每 10s | **无紧急断电**：`readSensor()` L225 顶端 `if(!dsOk) return` 直接退出，`controlTemp()` 不执行，旧 TEC 状态可能残留（LIMITATIONS #36，未修） |
 | F3 | 出風口过热 `ventT>=ventMax` | `controlTemp()` guard2 | 紧急断电 + saveState | 若 ventT 也是 NAN，guard1 先行，guard2 不执行；若 ventNAN 但 nestNAN 时 nanCount 还没累到 3，仍可能继续加热 |
 | F4 | H-bridge MOSFET fail-short | 无软件检测 | 仅靠 ventT 反馈 | 软件无法干预，需硬件温度保险（LIMITATIONS #32） |
 | F5 | 主 ESP `loop()` 卡死 | TWDT (7s 实际) | 看门狗复位 → setup → loadState 恢复 | 复位期间 TEC 处于上电状态，但 `setup()` 第一行 `digitalWrite(TEC_EN, LOW)` 关 TEC，相对安全 |
@@ -337,7 +337,7 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 1. **单文件巨 sketch**：`src/main.cpp` 1120 行包含感测、控制、HTTP、HTML、OLED、EEPROM，模块边界靠注释组织，不利于单元测试与并行开发。**这是本系统测试不可写**（见 test 章节说明）的最大根因。
 2. **无感测/控制抽象层**：温度读、决策、PWM 写三件事在 `controlTemp()` 内耦合，无法在 PC 上跑逻辑测试（必须 mock OneWire/Dallas/WebServer/ledc 全套 Arduino-API）。
 3. **状态散落全局变量**：`systemOn/cooling/heating/nanCount` 等十余个全局变量无封装，跨函数修改无原子性保证（被 core 后台 task 在 handleControl 中改写时与 loop 读取存在数据竞争，但单核 Arduino 上通常无重大隐患）。
-4. **HTML/CSS/JS 在 PROGMEM 内 raw 字符串中**：~360 行前端代码无法 lint、无法类型检查、无法复用组件，靠 `R"HTML(...)"` 维护极脆弱。CLAUDE.md 说"宁长勿短"在此处表现为单字符串巨石。
+4. **HTML/CSS/JS 在 PROGMEM 内 raw 字符串中**：~360 行前端代码无法 lint、无法类型检查、无法复用组件，靠 `R"HTML(...)"` 维护极脆弱。
 5. **相机固件无 OTA、无配置接口**：换 WiFi SSID/密码、改 IR/LED 引脚都要重新烧录，与主 ESP 的可配置 WiFi 模式形成体验落差。
 6. **两固件无共享库**：`include/`、`lib/` 均为空模板，养成"放了也不会被编译"的盲区。
 7. **TWO `httpd` 的 ctrl_port 错开靠硬编码 32769**：未做枚举常量化，未来扩第三个 server 时易撞端口。

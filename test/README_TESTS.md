@@ -81,7 +81,7 @@ pio test -e native --verbose
 
 ## 未来要让测试直接基于 `src/` 而非 mirror，需要做的重构
 
-详见 [docs/CODE_REVIEW.md] "结构改进" 节。要点：
+详见 [../docs/ARCHITECTURE.md] §10「已知架构限制」。要点：
 
 1. **拆 `src/main.cpp` 为多模块**：
    - `lib/teccore/control.{h,cpp}`：`controlTemp()` / `setTecPwm()` / `setFan()` / `emergencyStop()`
@@ -131,6 +131,6 @@ pio test -e native --verbose
 - 文件名前缀 `test_` + 模块名（`.cpp`）。
 - 每个函数 `void test_xxx(void)`；`main` 用 `UNITY_BEGIN()`/`UNITY_END()`。
 - 镜像段用注释 `// [MIRROR] 镜像 main.cpp:LINE` 标注来源行，便于源码改动反查。
-- 新增 tests 请在 [CODE_REVIEW.md] "结构改进" 节同步登记期望覆盖的源码行。
+- 新增 tests 请在 [../docs/ARCHITECTURE.md] §10「已知架构限制」同步登记期望覆盖的源码行。
 
 > 本骨架严格不改 `src/`，所有 mirror 实现是纯算法的语义副本；断言失败仅作为提示而非直接证明源码回归——需要 diff 校验两版差异以最终定位。建议在完成 src 重构后切换到 `#include` 真源并 ~95%删除 mirror 副本。
