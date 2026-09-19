@@ -6,6 +6,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
+#include <Adafruit_BME680.h>
 #include <EEPROM.h>
 #include <ESPmDNS.h>
 #include "esp_task_wdt.h"
@@ -39,6 +40,21 @@ bool nestOK = false, roomOK = false, ventOK = false;
 
 float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
+
+// ---- BME688：箱內溫濕壓 + Gas（I2C，與 OLED 並線 GPIO21/22）----
+// 註：BME688 與 BME680 暫存器/chip id 相容，故用 Adafruit BME680 驅動（未用 BSEC）
+Adafruit_BME680 bme;
+bool bmeOk = false;            // BME688 是否在線
+bool bmeMeasuring = false;     // 非阻塞讀取狀態機：量測進行中
+unsigned long bmeDue = 0;      // 本次量測完成時刻（millis）
+unsigned long lastBme = 0;     // 上次觸發讀取
+unsigned long lastBmeRetry = 0;
+int bmeFailCount = 0;          // 連續失敗次數，達 3 次標記離線
+const unsigned long BME_INTERVAL_MS = 10000;   // 10 秒一次（降低加熱器自熱佔空比）
+const unsigned long BME_BURNIN_MS = 600000;    // 前 10 分鐘為 Gas 燒機期，數值勿引用
+const float BME_GAS_ALPHA = 0.02f;             // Gas 基線慢速 EMA（時間常數 ~8 分鐘）
+float bmeT = NAN, bmeH = NAN, bmeP = NAN, bmeGas = NAN, bmeDP = NAN, bmeGasRel = NAN;
+float bmeGasBase = NAN;        // Gas 基線（相對法 100%）
 
 int fanSpeed = 0;
 float targetTemp = 28.0;   // 單一目標溫度
@@ -221,6 +237,82 @@ void controlTemp() {
   }
 }
 
+// ---- BME688 初始化 / 非阻塞讀取 ----
+void bmeInit(bool quiet = false) {
+  uint8_t addr = 0;
+  if (bme.begin(0x76)) addr = 0x76;
+  else if (bme.begin(0x77)) addr = 0x77;
+  if (addr == 0) {
+    bmeOk = false;
+    if (!quiet) Serial.println("[BME] 未偵測到 BME688（0x76/0x77 無回應）——環境欄位顯示 --");
+    return;
+  }
+  bme.setTemperatureOversampling(BME680_OS_8X);
+  bme.setHumidityOversampling(BME680_OS_2X);
+  bme.setPressureOversampling(BME680_OS_4X);
+  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
+  bme.setGasHeater(320, 150);   // 320°C / 150ms
+  bmeOk = true;
+  bmeMeasuring = false;
+  bmeFailCount = 0;
+  Serial.printf("[BME] 就緒 @0x%02X（溫濕壓 + Gas，加熱器 320C/150ms，週期 %lus）\n",
+                addr, BME_INTERVAL_MS / 1000);
+}
+
+// 非阻塞狀態機（與 DS18B20 同思路）：beginReading() 記下完成時刻，時間到才 endReading() 取值，不阻塞 loop
+void bmeTick() {
+  if (!bmeOk) {
+    // 熱插拔：離線時每 60 秒重試一次（與 OLED 5 秒探測同一思路）
+    if (millis() - lastBmeRetry >= 60000) { lastBmeRetry = millis(); bmeInit(true); }
+    return;
+  }
+  if (!bmeMeasuring) {
+    if (millis() - lastBme < BME_INTERVAL_MS) return;
+    lastBme = millis();
+    unsigned long due = bme.beginReading();
+    if (due == 0) {
+      if (++bmeFailCount >= 3) { bmeOk = false; Serial.println("[BME] 連續失敗 → 標記離線，持續重試"); }
+      else Serial.println("[BME] beginReading 失敗");
+      return;
+    }
+    bmeDue = due;
+    bmeMeasuring = true;
+    return;
+  }
+  if ((long)(millis() - bmeDue) < 0) return;   // 量測還沒完成，下一輪 loop 再看
+  bmeMeasuring = false;
+  if (!bme.endReading()) { Serial.println("[BME] 讀取失敗（沿用上一筆值）"); return; }
+  bmeFailCount = 0;
+  bmeT = bme.temperature;
+  bmeH = bme.humidity;
+  bmeP = bme.pressure / 100.0f;                                              // Pa → hPa
+  bmeGas = (bme.gas_resistance > 0) ? bme.gas_resistance / 1000.0f : NAN;    // Ω → kΩ（0 = 氣體未穩定）
+  // 露點：Magnus 公式
+  if (bmeH > 0 && bmeH <= 100) {
+    float lg = logf(bmeH / 100.0f) + (17.62f * bmeT) / (243.12f + bmeT);
+    bmeDP = (243.12f * lg) / (17.62f - lg);
+  } else {
+    bmeDP = NAN;
+  }
+  // Gas 相對基線法：慢速 EMA 當 100%，只報相對變化（無絕對 ppm）
+  if (isnan(bmeGas)) {
+    bmeGasRel = NAN;
+  } else {
+    if (isnan(bmeGasBase)) bmeGasBase = bmeGas;
+    else bmeGasBase = (1 - BME_GAS_ALPHA) * bmeGasBase + BME_GAS_ALPHA * bmeGas;
+    bmeGasRel = (bmeGasBase > 0) ? (bmeGas / bmeGasBase * 100.0f) : NAN;
+  }
+  Serial.printf("[BME] %.1fC %.1f%% %.1fhPa Gas:%.1fkΩ 相對:%.0f%% 露點:%.1fC%s\n",
+                bmeT, bmeH, bmeP, bmeGas, bmeGasRel, bmeDP,
+                (millis() < BME_BURNIN_MS) ? "（Gas 燒機期中）" : "");
+}
+
+// 浮點 → JSON：NAN 輸出 null
+void fmtOrNull(char* out, size_t n, float v, int prec) {
+  if (isnan(v)) strcpy(out, "null");
+  else snprintf(out, n, "%.*f", prec, v);
+}
+
 void readSensor() {
   if (!dsOk) return;
   if (!convPending) {
@@ -285,11 +377,20 @@ void handleData() {
     if (isnan(tArr[i])) strcpy(tBuf[i], "null");
     else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
   }
-  char buf[800];
+  // BME688 欄位（未接 = null，前端顯示 --）
+  char bT[8], bH[8], bP[10], bG[10], bR[8], bDP[8];
+  fmtOrNull(bT, sizeof(bT), bmeT, 2);
+  fmtOrNull(bH, sizeof(bH), bmeH, 1);
+  fmtOrNull(bP, sizeof(bP), bmeP, 1);
+  fmtOrNull(bG, sizeof(bG), bmeGas, 1);
+  fmtOrNull(bR, sizeof(bR), bmeGasRel, 0);
+  fmtOrNull(bDP, sizeof(bDP), bmeDP, 1);
+  char buf[1024];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode);
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode,
+    bmeOk ? "true" : "false", bT, bH, bP, bG, bR, bDP);
   server.send(200, "application/json", buf);
 }
 
@@ -506,6 +607,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .fld input.rv:focus{border-color:var(--c);color:var(--tx)}
 .info{font-size:.62rem;color:var(--t3);line-height:1.6;margin-top:4px}
 .info b{color:var(--t2)}
+#bmeSec .info{font-size:.72rem;line-height:1.9}
+#bmeSec .info b{color:var(--c);font-weight:800;font-variant-numeric:tabular-nums}
 .act-row{display:flex;gap:5px;margin-top:6px}
 .act-btn{flex:1;padding:7px;border-radius:5px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.68rem;font-weight:600;transition:all .15s}
 .act-btn:active{transform:scale(.95);background:rgba(20,184,166,.1);border-color:var(--c);color:var(--c)}
@@ -552,6 +655,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
           <div class="pill ch-pill" onclick="setChart(1)">活動區</div>
           <div class="pill ch-pill" onclick="setChart(2)">出風口</div>
         </div>
+      </div>
+    </div>
+    <div class="sec" id="bmeSec">
+      <h2>箱內環境 BME688 <span id="bmeState" style="float:right;font-size:.6rem;color:var(--t3);text-transform:none">--</span></h2>
+      <div class="info">
+        溫度 <b id="bT">--</b>°C　濕度 <b id="bH">--</b>%　露點 <b id="bDP">--</b>°C<br>
+        氣壓 <b id="bP">--</b> hPa　氣體 <b id="bG">--</b> kΩ　相對基線 <b id="bR">--</b>%
       </div>
     </div>
     <div class="sec cam-sec" id="camSec">
@@ -676,7 +786,7 @@ function exportCSV(){
   function pad(n){return String(n).padStart(2,'0');}
   var fn='TEC_'+now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'_'+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds())+'.csv';
   var meta='# TEC 蟄眠實驗\n# 導出時間: '+ds+'\n';
-  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態\n'+allData.map(function(r){return r.ti+','+(r.n==null?'':r.n.toFixed(2))+','+(r.r==null?'':r.r.toFixed(2))+','+(r.v==null?'':r.v.toFixed(2))+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持');}).join('\n');
+  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態,BME溫度,BME濕度,BME氣壓(hPa),BME氣體(kΩ),氣體相對(%),露點\n'+allData.map(function(r){return r.ti+','+(r.n==null?'':r.n.toFixed(2))+','+(r.r==null?'':r.r.toFixed(2))+','+(r.v==null?'':r.v.toFixed(2))+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持')+','+(r.bt==null?'':r.bt.toFixed(1))+','+(r.bh==null?'':r.bh.toFixed(1))+','+(r.bp==null?'':r.bp.toFixed(1))+','+(r.bg==null?'':r.bg.toFixed(1))+','+(r.br==null?'':Math.round(r.br))+','+(r.bdp==null?'':r.bdp.toFixed(1));}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
@@ -741,9 +851,16 @@ async function doPoll(){
     var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
     if(!camEnabled){document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
-    H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,ti:new Date().toLocaleTimeString()});
+    document.getElementById('bmeState').textContent=d.bmeOk?'在線':'未接';
+    document.getElementById('bT').textContent=d.bmeT==null?'--':d.bmeT.toFixed(1);
+    document.getElementById('bH').textContent=d.bmeH==null?'--':d.bmeH.toFixed(1);
+    document.getElementById('bDP').textContent=d.bmeDP==null?'--':d.bmeDP.toFixed(1);
+    document.getElementById('bP').textContent=d.bmeP==null?'--':d.bmeP.toFixed(1);
+    document.getElementById('bG').textContent=d.bmeGas==null?'--':d.bmeGas.toFixed(1);
+    document.getElementById('bR').textContent=d.bmeGasRel==null?'--':Math.round(d.bmeGasRel);
+    H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,br:d.bmeGasRel,bdp:d.bmeDP,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
-    allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,ti:new Date().toLocaleString()});
+    allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,br:d.bmeGasRel,bdp:d.bmeDP,ti:new Date().toLocaleString()});
     if(allData.length>ALLDATA_MAX)allData.shift();
     dC();
   }catch(e){
@@ -960,6 +1077,8 @@ void setup() {
   }
   Serial.printf(" (%d device(s))\n", i2cCount);
 
+  bmeInit();   // BME688（與 OLED 同一條 I2C）
+
   u8g2.begin();
   u8g2.setContrast(128);
   oledOnline = true;
@@ -1088,6 +1207,7 @@ void loop() {
     doScan();
   }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
+  bmeTick();   // BME688 非阻塞讀取（每 10 秒一筆，不阻塞 loop）
   // 定時檢查 OLED：拔掉再插回去也能自動恢復
   if (millis() - lastOledCheck >= 5000) {
     lastOledCheck = millis();
