@@ -22,6 +22,10 @@
 #define TEC_L_CH 1
 #define TEC_R_CH 2
 #define DS18B20_PIN 4
+#define LED_PIN 13        // LED 燈帶：GPIO13（板標 D7）→ 220Ω → IRLZ44N 閘極（4.7kΩ 下拉）
+#define LED_CH 4          // 用獨立 timer（ch2/3 共用 TEC_R 的 timer，勿用 ch3）
+#define LED_FREQ 5000
+#define LED_RES 10
 
 OneWire ds(DS18B20_PIN);
 DallasTemperature dt(&ds);
@@ -69,6 +73,7 @@ bool dsOk = false;
 bool fanManual = false;
 bool tecManual = false;
 bool manualMode = false;
+int stripPct = 0;         // LED 燈帶亮度 0–100%（不存 EEPROM，重啟為 0）
 bool convPending = false;
 unsigned long convStart = 0;
 bool sensorInit = false;  // 首次讀取完成後才啟用 NAN 保護
@@ -149,6 +154,11 @@ void emergencyStop() {
   systemOn = false;
   stopAll();
   Serial.println("!!! [緊急] 系統關閉 !!!");
+}
+
+void setStrip(int pct) {
+  stripPct = constrain(pct, 0, 100);
+  ledcWrite(LED_CH, stripPct * 1023 / 100);
 }
 
 void setTecPwm(float power, bool isCool) {
@@ -387,9 +397,9 @@ void handleData() {
   fmtOrNull(bDP, sizeof(bDP), bmeDP, 1);
   char buf[1024];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"fanManual\":%s,\"strip\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s}",
     tBuf[0], tBuf[1], tBuf[2], n,
-    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode,
+    fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode, fanManual ? "true" : "false", stripPct,
     bmeOk ? "true" : "false", bT, bH, bP, bG, bR, bDP);
   server.send(200, "application/json", buf);
 }
@@ -562,27 +572,30 @@ const char INDEX[] PROGMEM = R"HTML(<!DOCTYPE html>
 <title>TEC 實驗溫控</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#0a0e14;--sf:#111820;--bd:#1e2a36;--tx:#e0e6ed;--t2:#7a8a9a;--t3:#4a5568;--r:#ef4444;--b:#3b82f6;--g:#22c55e;--a:#eab308;--c:#14b8a6;--o:#f97316}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:18px clamp(16px,3vw,42px);max-width:1480px;margin:0 auto;min-height:100dvh}
+:root{--bg:#0b0f15;--sf:#121a24;--bd:#223041;--tx:#e0e6ed;--t2:#9aa8b6;--t3:#6b7a8c;--r:#ef4444;--b:#3b82f6;--g:#22c55e;--a:#eab308;--c:#14b8a6;--o:#f97316}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei",system-ui,sans-serif;background:radial-gradient(1200px 500px at 20% -10%,rgba(20,184,166,.07),transparent 60%),var(--bg);color:var(--tx);padding:18px clamp(16px,3vw,42px);max-width:1480px;margin:0 auto;min-height:100dvh}
 .hdr{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 16px;border-bottom:1px solid var(--bd);margin-bottom:14px}
 .hdr h1{font-size:clamp(1.05rem,1.5vw,1.3rem);font-weight:750;letter-spacing:-.02em}
 .hdr h1 b{color:var(--c)}
 .conn{display:flex;align-items:center;gap:7px;font-size:.75rem;color:var(--t2);font-variant-numeric:tabular-nums}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--g);flex-shrink:0;box-shadow:0 0 0 3px rgba(34,197,94,.12)}
+.chip{font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:12px;background:rgba(122,138,154,.12);color:var(--t2);margin-right:6px}.chip.run{background:rgba(20,184,166,.15);color:var(--c)}.chip.man{background:rgba(239,68,68,.15);color:var(--r)}
 .dot.err{background:var(--r);box-shadow:0 0 0 3px rgba(239,68,68,.12)}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:13px 8px;text-align:center;position:relative;overflow:hidden}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.025),transparent),var(--sf);border:1px solid var(--bd);border-radius:12px;padding:16px 8px 13px;text-align:center;position:relative;overflow:hidden}
 .card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
 .card.cr::before{background:var(--r)}.card.cb::before{background:var(--b)}.card.cg::before{background:var(--o)}
-.card .val{font-size:clamp(1.2rem,2.2vw,1.7rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.045em}
-.card .lbl{font-size:.62rem;color:var(--t2);margin-top:5px;letter-spacing:.04em}
+.card .val{font-size:clamp(1.5rem,2.8vw,2.1rem);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.045em}
+.card .val small{font-size:.5em;font-weight:600;color:var(--t2);margin-left:2px}
+.card .sub{font-size:.7rem;color:var(--t3);margin-top:4px;font-variant-numeric:tabular-nums}
+.card .lbl{font-size:.75rem;color:var(--t2);margin-top:5px;letter-spacing:.04em}
 .dashboard{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(340px,.85fr);gap:14px;align-items:start}
 .primary-grid{display:grid;grid-template-columns:1fr;gap:10px;align-items:start}
 .chart-sec{min-height:0}.chart-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.chart-toolbar h2{margin:0}.chart-toolbar .act-row{margin:0;width:auto;flex-shrink:0}.chart-toolbar .act-btn{min-width:82px}
 .desktop-charts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.desktop-chart{min-width:0;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:8px}.desktop-chart h3{font-size:.62rem;font-weight:750;color:var(--t2);margin:0 0 5px}.desktop-chart.nest h3{color:var(--r)}.desktop-chart.room h3{color:var(--b)}.desktop-chart.vent h3{color:var(--o)}
 .desktop-chart canvas{width:100%;height:175px;display:block}.mobile-chart{display:none}.control-col{display:grid;gap:10px}
-.sec{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:0}
-.sec h2{font-size:.68rem;color:var(--t2);font-weight:750;margin-bottom:10px;text-transform:uppercase;letter-spacing:.1em}
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:15px 16px;margin:0}
+.sec h2{font-size:.85rem;color:var(--tx);font-weight:700;margin-bottom:12px;letter-spacing:.02em;padding-left:9px;border-left:3px solid var(--c);line-height:1.1}
 .cam-sec{height:auto}.cam-sec #camBody{min-height:0}
 .system-sec .btn{margin-bottom:2px}
 .control-col .sec{box-shadow:0 1px 0 rgba(255,255,255,.018)}
@@ -593,19 +606,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .pills{display:flex;gap:5px;margin-top:8px}
 .pill{flex:1;text-align:center;padding:6px 0;border-radius:6px;background:var(--bg);border:1px solid var(--bd);font-size:.7rem;font-weight:600;cursor:pointer;user-select:none;transition:all .15s}
 .pill:active{transform:scale(.96)}
-.pill.sys.act{border-color:var(--c);color:var(--c)}
+.pill.sys{cursor:default;border-style:dashed;color:var(--t3)}.pill.sys.act{border-style:solid;background:rgba(20,184,166,.12);border-color:transparent;color:var(--c)}
 .pill.cold{color:var(--t2)}.pill.cold.act{border-color:var(--b);color:var(--b)}
 .pill.hot{color:var(--t2)}.pill.hot.act{border-color:var(--r);color:var(--r)}
-.pill.ch-pill{color:var(--t3);font-size:.58rem}.pill.ch-pill.act{color:var(--tx);border-color:var(--c)}
+.pill.ch-pill{color:var(--t3);font-size:.72rem}.pill.ch-pill.act{color:var(--tx);border-color:var(--c)}
 .fld{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-.fld label{font-size:.7rem;color:var(--t2);min-width:64px}
-.fld input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
-.fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--c);cursor:pointer}
+.fld label{font-size:.8rem;color:var(--t2);min-width:76px}
+.fld input[type=range]{flex:1;height:6px;cursor:pointer;-webkit-appearance:none;appearance:none;background:var(--bd);border-radius:2px;outline:none}
+.fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--c);cursor:pointer;border:2px solid var(--bg)}
+.fld input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--c);cursor:pointer;border:2px solid var(--bg)}
 .fld .rv{font-size:.85rem;font-weight:800;color:var(--c);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
 .fld input.rv{background:0 0;border:1px solid transparent;outline:none;padding:2px 4px;border-radius:4px;width:60px;font-family:inherit;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
 .fld input.rv::-webkit-inner-spin-button,.fld input.rv::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 .fld input.rv:focus{border-color:var(--c);color:var(--tx)}
-.info{font-size:.62rem;color:var(--t3);line-height:1.6;margin-top:4px}
+.info{font-size:.74rem;color:var(--t3);line-height:1.6;margin-top:4px}
+.banner{display:none;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:.85rem;font-weight:600;line-height:1.5}
+.banner.show{display:block}.banner.err{background:rgba(239,68,68,.14);border:1px solid var(--r);color:#fca5a5}.banner.warn{background:rgba(234,179,8,.12);border:1px solid var(--a);color:#fde68a}
+.tag{font-size:.7rem;font-weight:700;padding:1px 7px;border-radius:9px;border:1px solid var(--bd);color:var(--t2);text-transform:none;letter-spacing:0;float:right}
+.tag.man{border-color:var(--a);color:var(--a)}
 .info b{color:var(--t2)}
 #bmeSec .info{font-size:.72rem;line-height:1.9}
 #bmeSec .info b{color:var(--c);font-weight:800;font-variant-numeric:tabular-nums}
@@ -613,25 +631,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
 .act-btn{flex:1;padding:7px;border-radius:5px;border:1px solid var(--bd);background:0 0;color:var(--t2);cursor:pointer;font-size:.68rem;font-weight:600;transition:all .15s}
 .act-btn:active{transform:scale(.95);background:rgba(20,184,166,.1);border-color:var(--c);color:var(--c)}
 #chart{width:100%;height:210px;display:block}
-.cam-wrap{position:relative;width:100%;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:4/3}
+.cam-wrap{position:relative;width:100%;border-radius:8px;overflow:hidden;background:#000;aspect-ratio:4/3}.cam-wrap.off{aspect-ratio:auto;height:64px;background:var(--bg);border:1px dashed var(--bd)}
 .cam-wrap img{width:100%;height:100%;display:block;object-fit:cover}
 .cam-off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:.7rem}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--c);color:#000;padding:7px 18px;border-radius:8px;font-size:.78rem;font-weight:700;opacity:0;transition:all .25s;pointer-events:none;z-index:99}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media(max-width:900px){body{max-width:760px;padding:14px 16px}.dashboard,.primary-grid{grid-template-columns:1fr}.control-col{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.system-sec{grid-column:1/-1}.desktop-chart canvas{height:150px}}
-@media(max-width:768px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.54rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.62rem;margin-bottom:8px}.desktop-charts{display:none}.mobile-chart{display:block}.chart-toolbar{align-items:flex-start;flex-direction:column;gap:8px}.chart-toolbar .act-row{width:100%}.chart-toolbar .act-btn{min-width:0}.mobile-chart #chart{height:150px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
+@media(max-width:768px){body{padding:12px 14px}.hdr{padding-bottom:12px;margin-bottom:10px}.grid{gap:6px;margin-bottom:10px}.card{border-radius:8px;padding:10px 4px}.card .val{font-size:1.15rem}.card .lbl{font-size:.68rem}.dashboard,.primary-grid,.control-col{display:grid;grid-template-columns:1fr;gap:8px}.sec{border-radius:8px;padding:12px}.sec h2{font-size:.72rem;margin-bottom:8px}.desktop-charts{display:none}.mobile-chart{display:block}.chart-toolbar{align-items:flex-start;flex-direction:column;gap:8px}.chart-toolbar .act-row{width:100%}.chart-toolbar .act-btn{min-width:0}.mobile-chart #chart{height:150px}.btn{min-height:44px}.pill,.act-btn{min-height:40px}.fld{min-height:38px}.cam-wrap{border-radius:6px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div class="hdr">
   <h1><b>TEC</b> 蟄眠實驗</h1>
-  <div class="conn"><span class="dot" id="dot"></span><span id="st">...</span></div>
+  <div class="conn"><span class="chip" id="hChip">待機</span><span class="dot" id="dot"></span><span id="st">...</span></div>
 </div>
+<div class="banner" id="banner"></div>
 <div class="grid">
-  <div class="card cr"><div class="val" id="mNest">--</div><div class="lbl">巢穴</div></div>
-  <div class="card cb"><div class="val" id="mRoom">--</div><div class="lbl">活動區</div></div>
-  <div class="card cg"><div class="val" id="mVent">--</div><div class="lbl">出風口</div></div>
+  <div class="card cr"><div class="val" id="mNest">--</div><div class="lbl">巢穴 · 控制點</div><div class="sub" id="mTgt">目標 --</div></div>
+  <div class="card cb"><div class="val" id="mRoom">--</div><div class="lbl">活動區 · 監測</div><div class="sub">&nbsp;</div></div>
+  <div class="card cg"><div class="val" id="mVent">--</div><div class="lbl">出風口 · 安全</div><div class="sub" id="mVmax">上限 --</div></div>
 </div>
 <div class="dashboard">
   <div class="primary-grid">
@@ -667,7 +686,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
     <div class="sec cam-sec" id="camSec">
   <h2>即時影像 <button class="act-btn" id="camToggle" onclick="toggleCam()" style="float:right;padding:2px 8px;font-size:.6rem">開啟</button></h2>
   <div id="camBody">
-    <div class="cam-wrap">
+    <div class="cam-wrap off" id="camWrap">
       <img id="camStream" src="" alt="camera" style="display:none" onload="camOk()" onerror="camErr()">
       <div class="cam-off" id="camOff">攝像頭已關閉</div>
     </div>
@@ -684,9 +703,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   <button class="btn off" id="sysBtn" onclick="toggleSys()">開啟系統</button>
   <div class="pills">
     <div class="pill sys" id="pSys">待機</div>
-    <div class="pill cold" id="pCool" onclick="toggleCool()">製冷</div>
-    <div class="pill hot" id="pHeat" onclick="toggleHeat()">加熱</div>
+    <div class="pill cold" id="pCool" onclick="toggleCool()" title="進入手動模式，TEC 78% 製冷">製冷</div>
+    <div class="pill hot" id="pHeat" onclick="toggleHeat()" title="進入手動模式，TEC 78% 加熱">加熱</div>
   </div>
+  <div class="info">點「製冷/加熱」會進入<b>手動模式</b>（安全保護不生效）；切回自動模式才恢復保護。</div>
   <div class="pills" style="margin-top:6px">
     <button class="act-btn" id="modeBtn" onclick="toggleMode()">切換手動模式</button>
     <button class="act-btn" id="wifiBtn" onclick="toggleWifi()" style="margin-left:6px;background:rgba(139,92,246,.15);color:#a78bfa">WiFi: 純AP</button>
@@ -726,26 +746,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-seri
   <div class="info">出風口超過上限 → 立即關閉系統（硬體保護）</div>
 </div>
 <div class="sec">
-  <h2>風速控制</h2>
+  <h2>風速控制 <span class="tag" id="fanTag">自動</span></h2>
   <div class="fld">
     <label>手動風速</label>
     <input type="range" min="0" max="100" step="1" value="0" id="fanS" oninput="setFanM(this.value)">
     <span class="rv" id="fanV">0%</span>
+  </div>
+  <div class="info">拖動即轉為手動轉速（低於 22% 不轉）；停止再開啟系統才恢復自動。</div>
+</div>
+<div class="sec">
+  <h2>LED 燈帶 <span class="tag" id="stripTag">關</span></h2>
+  <div class="fld">
+    <label>亮度</label>
+    <input type="range" min="0" max="100" step="1" value="0" id="stripS" oninput="setStrip(this.value)">
+    <span class="rv" id="stripV">0%</span>
+  </div>
+  <div class="act-row">
+    <button class="act-btn" onclick="setStrip(0)">關</button>
+    <button class="act-btn" onclick="setStrip(30)">30%</button>
+    <button class="act-btn" onclick="setStrip(100)">全亮</button>
   </div>
 </div>
 <div class="sec">
   <h2>更新頻率</h2>
   <div class="fld">
     <label>間隔秒數</label>
-    <input type="range" min="1" max="10" step="1" value="2" id="pollS" oninput="setPoll(this.value)">
-    <span class="rv" id="pollV">2s</span>
+    <input type="range" min="1" max="10" step="1" value="1" id="pollS" oninput="setPoll(this.value)">
+    <span class="rv" id="pollV">1s</span>
   </div>
+  <div class="info">開啟攝像頭時至少 5 秒，以免和串流搶頻寬。</div>
 </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
-var H=[],M=600,allData=[],ms=1000,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false,controlTimers={};
+var H=[],M=600,allData=[],ms=1000,userMs=1000,sp=false,pi=null,fm=false,ue=false,chartMode=0,ALLDATA_MAX=10000,camEnabled=false,controlTimers={};
 var chartColors=[['#ef4444','rgba(239,68,68,'],['#3b82f6','rgba(59,130,246,'],['#f97316','rgba(249,115,22,']];
 var chartLabels=['巢穴','活動區','出風口'];
 var chartFields=['n','r','v'];
@@ -764,6 +799,7 @@ function drawChart(canvas,mode){
   ctx.clearRect(0,0,W,HH);
   if(H.length<2){ctx.fillStyle='#4a5568';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText('等待 '+lb+' 資料...',W/2,HH/2);return;}
   var mn=1e9,mx=-1e9;H.forEach(function(r){var v=r[f];if(v!=null&&v<mn)mn=v;if(v!=null&&v>mx)mx=v;});
+  if(mn>mx){ctx.fillStyle='#6b7a8c';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText(lb+' 無資料（斷線）',W/2,HH/2);return;}
   if(mn>=mx){mn-=1;mx+=1;}
   var sp=mx-mn;if(sp<1){mn-=1;mx+=1;sp=2;}
   var pa=sp*.12;mn-=pa;mx+=pa;sp=mx-mn;
@@ -790,10 +826,10 @@ function exportCSV(){
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
-function clearHist(){H=[];allData=[];rs();toast('已清除');}
+function clearHist(){if(allData.length&&!confirm('清除全部 '+allData.length+' 筆記錄？未導出的資料會遺失。'))return;H=[];allData=[];rs();toast('已清除');}
 var irOn=false,ledOn=false,camIP='',camTimer=null;
-function camOk(){var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
-function camErr(){var i=document.getElementById('camStream');i.style.display='none';document.getElementById('camOff').style.display='flex';if(camIP&&camEnabled)camTimer=setTimeout(camPoll,2000);}
+function camOk(){document.getElementById('camWrap').className='cam-wrap';var i=document.getElementById('camStream');i.style.display='';document.getElementById('camOff').style.display='none';}
+function camErr(){document.getElementById('camWrap').className='cam-wrap off';var i=document.getElementById('camStream');i.style.display='none';document.getElementById('camOff').style.display='flex';if(camIP&&camEnabled)camTimer=setTimeout(camPoll,2000);}
 function camPoll(){
   clearTimeout(camTimer);
   if(!camIP||!camEnabled)return;
@@ -811,13 +847,19 @@ async function doPoll(){
     if(!d.ok){document.getElementById('st').textContent=d.message;document.getElementById('dot').className='dot err';return;}
     document.getElementById('dot').className='dot';
     document.getElementById('st').textContent=new Date().toLocaleTimeString();
-    document.getElementById('mNest').textContent=d.nest==null?'---':d.nest.toFixed(2);
-    document.getElementById('mRoom').textContent=d.room==null?'---':d.room.toFixed(2);
-    document.getElementById('mVent').textContent=d.vent==null?'---':d.vent.toFixed(2);
+    [['mNest',d.nest],['mRoom',d.room],['mVent',d.vent]].forEach(function(a){var e=document.getElementById(a[0]);e.innerHTML=a[1]==null?'<span style="color:var(--r)">斷線</span>':a[1].toFixed(2)+'<small>°C</small>';});
+    var bn=document.getElementById('banner'),miss=[];if(d.nest==null)miss.push('巢穴');if(d.room==null)miss.push('活動區');if(d.vent==null)miss.push('出風口');
+    if(d.manualMode){bn.className='banner show err';bn.textContent='⚠ 手動模式：自動溫控與安全保護（斷線急停、出風口上限）都不生效。用完請切回自動模式。';}
+    else if(miss.length){bn.className='banner show err';bn.textContent='⚠ 感測器斷線：'+miss.join('、')+'。系統開啟時連續 3 次讀不到會緊急停止。';}
+    else if(d.systemOn&&d.fanManual){bn.className='banner show warn';bn.textContent='風扇目前是手動轉速，TEC 仍為自動。停止再開啟系統可恢復自動風扇。';}
+    else bn.className='banner';
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
     document.getElementById('sysBtn').textContent=d.systemOn?'停止系統':'開啟系統';
     var ps=d.systemOn?(d.cooling?'製冷中':d.heating?'加熱中':'維持中'):'待機';
     document.getElementById('pSys').textContent=ps;
+    var hc=document.getElementById('hChip');hc.textContent=d.manualMode?'手動模式':d.systemOn?'運行中 · '+ps.replace('中',''):'待機';hc.className='chip'+(d.manualMode?' man':d.systemOn?' run':'');
+    document.getElementById('mTgt').textContent='目標 '+d.targetTemp.toFixed(1)+'°C ±'+d.hysteresis.toFixed(2);
+    document.getElementById('mVmax').textContent='上限 '+d.ventMax.toFixed(0)+'°C';
     document.getElementById('pSys').className='pill sys'+(d.systemOn?' act':'');
     document.getElementById('pCool').className='pill cold'+(d.cooling?' act':'');
     document.getElementById('pHeat').className='pill hot'+(d.heating?' act':'');
@@ -842,15 +884,18 @@ async function doPoll(){
     document.getElementById('wifiBtn').textContent=d.wifiMode?'WiFi: STA+AP备援':'WiFi: 純AP';
     document.getElementById('wifiBtn').style.background=d.wifiMode?'rgba(245,158,11,.15)':'rgba(139,92,246,.15)';
     document.getElementById('wifiBtn').style.color=d.wifiMode?'#fbbf24':'#a78bfa';
+    var ft=document.getElementById('fanTag');ft.textContent=d.fanManual?'手動':'自動';ft.className='tag'+(d.fanManual?' man':'');
+    if(!sp){document.getElementById('stripS').value=d.strip;document.getElementById('stripV').textContent=d.strip+'%';}
+    document.getElementById('stripTag').textContent=d.strip>0?'開 '+d.strip+'%':'關';
     if(!fm){
       document.getElementById('fanV').textContent=Math.round(d.fanSpeed*100/255)+'%';
       document.getElementById('fanS').value=Math.round(d.fanSpeed*100/255);
     }
     camEnabled=d.camEnabled;if(d.camIP)camIP=d.camIP;
     // 串流時減少輪詢帶寬競爭
-    var oldMs=ms;ms=camEnabled?5000:1000;if(oldMs!==ms)poll();
+    var oldMs=ms;ms=camEnabled?Math.max(userMs,5000):userMs;if(oldMs!==ms)poll();
     document.getElementById('camToggle').textContent=camEnabled?'關閉':'開啟';
-    if(!camEnabled){document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
+    if(!camEnabled){document.getElementById('camWrap').className='cam-wrap off';document.getElementById('camStream').style.display='none';document.getElementById('camOff').textContent='攝像頭已關閉';document.getElementById('camOff').style.display='flex';}
     document.getElementById('bmeState').textContent=d.bmeOk?'在線':'未接';
     document.getElementById('bT').textContent=d.bmeT==null?'--':d.bmeT.toFixed(1);
     document.getElementById('bH').textContent=d.bmeH==null?'--':d.bmeH.toFixed(1);
@@ -906,7 +951,8 @@ function toggleCam(){
 function toggleCool(){_cooling=!_cooling;if(_cooling){_heating=false;fetch('/control?manual=1',{method:'POST'});tTest('cool',200);}else{tTest('cool',0);}}
 function toggleHeat(){_heating=!_heating;if(_heating){_cooling=false;fetch('/control?manual=1',{method:'POST'});tTest('heat',200);}else{tTest('heat',0);}}
 function poll(){clearInterval(pi);pi=setInterval(doPoll,ms);}
-function setPoll(v){ms=v*1000;document.getElementById('pollV').textContent=v+'s';poll();}
+function setPoll(v){userMs=v*1000;ms=camEnabled?Math.max(userMs,5000):userMs;document.getElementById('pollV').textContent=v+'s';poll();}
+function setStrip(v){v=Math.round(v);sp=true;document.getElementById('stripS').value=v;document.getElementById('stripV').textContent=v+'%';clearTimeout(controlTimers.strip);controlTimers.strip=setTimeout(function(){fetch('/strip?b='+v).then(function(){sp=false;}).catch(function(){sp=false;toast('燈帶控制失敗');});},150);}
 function setChart(v){
   chartMode=v;
   document.querySelectorAll('.ch-pill').forEach(function(e,i){e.className='pill ch-pill'+(i===v?' act':'');});
@@ -1056,6 +1102,7 @@ void setup() {
   ledcSetup(FAN_CH, PWM_FREQ, PWM_RES); ledcAttachPin(FAN_PIN, FAN_CH);
   ledcSetup(TEC_L_CH, PWM_FREQ, TEC_PWM_RES); ledcAttachPin(TEC_LPWM, TEC_L_CH);
   ledcSetup(TEC_R_CH, PWM_FREQ, TEC_PWM_RES); ledcAttachPin(TEC_RPWM, TEC_R_CH);
+  ledcSetup(LED_CH, LED_FREQ, LED_RES); ledcAttachPin(LED_PIN, LED_CH); setStrip(0);
   setFan(0); setTec(0, 0);
 
   doScan();
@@ -1128,6 +1175,12 @@ void setup() {
   server.on("/diag", handleDiag);
   server.on("/control", HTTP_POST, handleControl);
   server.on("/test", handleTest);
+  server.on("/strip", []() {   // LED 燈帶：/strip?b=0-100
+    if (server.hasArg("b")) setStrip(server.arg("b").toInt());
+    char buf[32];
+    snprintf(buf, sizeof(buf), "{\"strip\":%d}", stripPct);
+    server.send(200, "application/json", buf);
+  });
 
   server.on("/light", []() {
     // 樂觀更新：先根據請求設定本地狀態，保證即時響應
