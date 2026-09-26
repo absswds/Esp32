@@ -4,7 +4,7 @@
 >
 > 如果只想知道"我现在改这个值会发生什么、改之前要注意什么"，请直接跳到 §6 "调参导引"。
 >
-> **状态（2026-09-10 收尾锁版）：** 引脚/阈值/EEPROM 布局已按现行 `src/main.cpp`（1120 行）核对；代码已知问题集中在 [../LIMITATIONS.md](../LIMITATIONS.md) #34~#36，锁版冻结不再改代码。
+> **状态（2026-09-10 收尾锁版）：** 引脚/阈值/EEPROM 布局已按现行 `src/main.cpp`（1240 行，含 BME688）核对；代码已知问题集中在 [../LIMITATIONS.md](../LIMITATIONS.md) #34~#37，锁版冻结不再改代码。
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### 1.1 主 ESP（FireBeetle 2 ESP32-E，board `esp32dev`）
 
-定义见 `src/main.cpp:13-23`。
+定义见 `src/main.cpp:14-24`。
 
 | 信号 | 宏 | GPIO | FireBeetle 板标 | 类型 | 用途 |
 |------|-----|------|------------------|------|------|
@@ -36,7 +36,7 @@
 | TEC LPWM | `TEC_LPWM` | 26 | D3 | LEDC ch1 PWM 输出 | 制冷方向（**线已对调**，详见 README 注意事项） |
 | TEC RPWM | `TEC_RPWM` | 25 | D2 | LEDC ch2 PWM 输出 | 加热方向 |
 | DS18B20 | `DS18B20_PIN` | 4 | **D12** | OneWire 双向 | 3 颗并联 + 4.7kΩ 上拉到 3.3V |
-| LED 灯带 | `LED_PIN` | 27 | D4 | 数字/PWM OUT | **待装机**：经 IRLZ44N 驱动 12V COB 灯带（2026-09-10 锁版） |
+| LED 灯带 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 数字/PWM OUT | **待装机**：经 IRLZ44N 驱动 12V COB 灯带（2026-09-10 锁版） |
 | OLED SDA | — | 21 | SDA | I2C 双向 | SSD1306 数据 |
 | OLED SCL | — | 22 | SCL | I2C 双向 | SSD1306 时钟 |
 | BME688 | — | 21/22 | SDA/SCL | I2C 双向 | **待装机**：与 OLED 并线（同址 0x76/0x77 冲突时需改址） |
@@ -53,9 +53,8 @@
 |------|------|-----------|
 | D2 | 25 | ✅ |
 | D3 | 26 | ✅ |
-| D4 | 27 | ✅（**LED 灯带**经 IRLZ44N） |
+| D7 | 13 | ✅（**LED 灯带**经 IRLZ44N；本板无 D4/GPIO27） |
 | D5 | 0 | ❌ strapping |
-| D7 | 13 | ✅ |
 | D8 | 5 | ❌ strapping |
 | D9 | 2 | ❌ strapping（也是内置 LED） |
 | D12 | **4** | ✅（**OneWire 用**） |
@@ -77,7 +76,7 @@
 
 ## 2. PWM / LEDC 参数
 
-定义见 `src/main.cpp:13-22`。
+定义见 `src/main.cpp:14-23`。
 
 | 通道 | 宏 | 引脚 | 频率 | 分辨率 | 范围 | 写函数 |
 |------|-----|------|------|--------|------|--------|
@@ -97,21 +96,21 @@
 
 | 项 | 宏 / 全局 | 值 | 位置 | 说明 |
 |----|----------|----|----|----|
-| EMA 滤波系数 | `EMA_ALPHA` | `0.5f` | `main.cpp:73` | 新读值占 50%，旧滤波值占 50%；越大越逼真但越噪 |
-| 风扇延迟关闭时间 | `FAN_AFTERRUN_MS` | `10000` ms | `main.cpp:78` | TEC 关后保持 78% 风扇 10 秒 |
-| 风扇延迟档速 | `FAN_AFTERRUN_SPEED` | `200` PWM | `main.cpp:79` | ≈78%（200/255） |
-| 状态保存去抖 | `STATE_SAVE_DEBOUNCE_MS` | `750` ms | `main.cpp:65` | `/control` 写参数后 0.75s 内不再写 EEPROM |
-| 看门狗超时 | `esp_task_wdt_init(7, true)` | **7 秒** | `main.cpp:933` | ⚠️ 旧注释写 3 秒，**实际是 7 秒**，以代码为准 |
-| OneWire 转换等待 | `millis()-convStart >= 750` | 750 ms | `main.cpp:232` | DS18B20 12-bit 转换时间硬约束 |
-| 感测周期 | `millis()-lastRead >= 2000` | 2000 ms | `main.cpp:1090` | loop 内触发；叠加 750ms 转换等待与调度开销，**实测约 4s**（见 ARCHITECTURE） |
-| 重扫间隔 | `millis()-lastScan >= 10000` | 10 s | `main.cpp:1086` | 任一感测器缺失时才扫 |
-| OLED 检查 | `millis()-lastOledCheck >= 5000` | 5 s | `main.cpp:1092` | 热插拔检查 |
-| OLED 刷新 | `millis()-lastOled >= 2000` | 2 s | `main.cpp:1104` | 画面更新 |
-| mDNS 重查 | `resolveInterval` | 5 s（未确认）/60 s（确认） | `main.cpp:1111` | 相机 IP 刷新 |
+| EMA 滤波系数 | `EMA_ALPHA` | `0.5f` | `main.cpp:89` | 新读值占 50%，旧滤波值占 50%；越大越逼真但越噪 |
+| 风扇延迟关闭时间 | `FAN_AFTERRUN_MS` | `10000` ms | `main.cpp:94` | TEC 关后保持 78% 风扇 10 秒 |
+| 风扇延迟档速 | `FAN_AFTERRUN_SPEED` | `200` PWM | `main.cpp:95` | ≈78%（200/255） |
+| 状态保存去抖 | `STATE_SAVE_DEBOUNCE_MS` | `750` ms | `main.cpp:81` | `/control` 写参数后 0.75s 内不再写 EEPROM |
+| 看门狗超时 | `esp_task_wdt_init(7, true)` | **7 秒** | `main.cpp:1050` | ⚠️ 旧注释写 3 秒，**实际是 7 秒**，以代码为准 |
+| OneWire 转换等待 | `millis()-convStart >= 750` | 750 ms | `main.cpp:324` | DS18B20 12-bit 转换时间硬约束 |
+| 感测周期 | `millis()-lastRead >= 2000` | 2000 ms | `main.cpp:1209` | loop 内触发；叠加 750ms 转换等待与调度开销，**实测约 4s**（见 ARCHITECTURE） |
+| 重扫间隔 | `millis()-lastScan >= 10000` | 10 s | `main.cpp:1205` | 任一感测器缺失时才扫 |
+| OLED 检查 | `millis()-lastOledCheck >= 5000` | 5 s | `main.cpp:1212` | 热插拔检查 |
+| OLED 刷新 | `millis()-lastOled >= 2000` | 2 s | `main.cpp:1224` | 画面更新 |
+| mDNS 重查 | `resolveInterval` | 5 s（未确认）/60 s（确认） | `main.cpp:1231` | 相机 IP 刷新 |
 
 ### 2.3 文档与代码不符处（风扇）
 
-> ⚠️ README "溫控邏輯詳解" 写"製冷時風扇應以 PWM 50–52% 運行（實測最優）"，但 **`controlTemp()` 制冷分支实际写 `setFan(255)`（全速）**（`main.cpp:199-204`）。
+> ⚠️ README "溫控邏輯詳解" 写"製冷時風扇應以 PWM 50–52% 運行（實測最優）"，但 **`controlTemp()` 制冷分支实际写 `setFan(255)`（全速）**（`main.cpp:215-221`）。
 
 实测发现 52% 才是最优，但**这部分代码未同步**（收尾锁版决定不修）。详见 [../LIMITATIONS.md](../LIMITATIONS.md) #34。若要同步：
 - 把制冷分支 `setFan(255)` 改为 `setFan(round(255*0.52))`（≈133）或引入常量 `COOL_FAN_PCT=52`。
@@ -126,11 +125,11 @@
 
 | 变量 | 默认值 | API 范围（constrain） | UI 滑条 min/max | 用途 | 位置 |
 |------|--------|---------------------|----------------|------|------|
-| `targetTemp` | `28.0` | `10.0 ~ 40.0` | 10/40/step 0.1 | 单目标温度 °C | `main.cpp:44` |
-| `hysteresis` | `0.5` | `0.01 ~ 3.0` | 0.01/3/step 0.01 | 维持死区 ±hysteresis °C | `main.cpp:45` |
-| `safeMin` | `5.0` | `0 ~ 20` | 0/20/step 0.5 | 巢穴最低安全温度（动物保护） | `main.cpp:68` |
-| `safeMax` | `35.0` | `20 ~ 50` | 20/50/step 0.5 | 巢穴最高安全温度 | `main.cpp:69` |
-| `ventMax` | `50.0` | `40 ~ 80` | 40/80/step 1 | 出风口断电阈值（硬件保护） | `main.cpp:70` |
+| `targetTemp` | `28.0` | `10.0 ~ 40.0` | 10/40/step 0.1 | 单目标温度 °C | `main.cpp:60` |
+| `hysteresis` | `0.5` | `0.01 ~ 3.0` | 0.01/3/step 0.01 | 维持死区 ±hysteresis °C | `main.cpp:61` |
+| `safeMin` | `5.0` | `0 ~ 20` | 0/20/step 0.5 | 巢穴最低安全温度（动物保护） | `main.cpp:84` |
+| `safeMax` | `35.0` | `20 ~ 50` | 20/50/step 0.5 | 巢穴最高安全温度 | `main.cpp:85` |
+| `ventMax` | `50.0` | `40 ~ 80` | 40/80/step 1 | 出风口断电阈值（硬件保护） | `main.cpp:86` |
 
 > ⚠️ **`ventMax` 范围在 `handleControl()` 中是 `40~80`**（README 旧文本曾写 `30~80`，现已同步为 40~80）。在 `loadState()` 中 clamp 也是 `40.0~80.0`。请以**40~80 为准**。
 >
@@ -140,11 +139,11 @@
 
 | 变量 | 默认 | API 范围 | 位置 | 用途 |
 |------|------|----------|------|------|
-| `nestOffset` | 0 | `-5.0 ~ 5.0` | `main.cpp:82`, 283-285 | 巢穴 DS18B20 校准 |
+| `nestOffset` | 0 | `-5.0 ~ 5.0` | `main.cpp:98`, 433-437 | 巢穴 DS18B20 校准 |
 | `roomOffset` | 0 | `-5.0 ~ 5.0` | `82`, 287-291 | 活动区 |
 | `ventOffset` | 0 | `-5.0 ~ 5.0` | `82`, 293-295 | 出风口 |
 
-偏移在 `readSensor()` 中叠加到 raw 读值，参见 `main.cpp:253`。**对控制用滤波值和显示用原始值都生效**（同一 `raw[i] += offs` 后分别走滤波与 readTemps）。
+偏移在 `readSensor()` 中叠加到 raw 读值，参见 `main.cpp:345`。**对控制用滤波值和显示用原始值都生效**（同一 `raw[i] += offs` 后分别走滤波与 readTemps）。
 
 ### 3.3 阈值生效优先级
 
@@ -165,7 +164,7 @@
 
 ## 4. EEPROM 地址映射
 
-主 ESP `EEPROM.begin(256)`，flash 模拟，**`EEPROM.commit()` 才真正写**。映射见 `main.cpp:373-419`。
+主 ESP `EEPROM.begin(256)`，flash 模拟，**`EEPROM.commit()` 才真正写**。映射见 `main.cpp:474-520`。
 
 | 地址偏移 | 长度 | 字段 | C++ 存取 | 写入时机 |
 |----------|------|------|----------|---------|
@@ -191,8 +190,8 @@
 ```text
 if EEPROM[0] != 0xAA → 使用代码默认值，return
 else 读全部字段
-  · ventMax 越界 → clamp 到 [40, 80]        （main.cpp:403）
-  · wifiMode 越界 (>1) → 设为 0              （main.cpp:408）
+  · ventMax 越界 → clamp 到 [40, 80]        （main.cpp:504）
+  · wifiMode 越界 (>1) → 设为 0              （main.cpp:509）
   · SSID 空 ('\0') 或 0xFF（未写flash）→ 用默认 "OPhone 12" / "qwer1234"
 ```
 
@@ -248,11 +247,11 @@ STA 默认凭据：`OPhone 12` / `qwer1234`，当 EEPROM 中 SSID 为空或 0xFF
 `POST /control?nestOff=-0.3&roomOff=0&ventOff=0.2`，每项 `-5~5`。
 生效时机：**下一次 `readSensor()` 读数时**（而非下一次 `controlTemp`），因为偏移在 `readSensor()` 中累加到 raw 读值后才进入滤波器。
 
-如果断线时 `*(filtPtrs[i]) = NAN`，下次恢复时**首次读值直接设为 raw（不经过 EMA）**（`main.cpp:254-255`），所以重新校准后只需一次读数就能"重置滤波"，断线反而是恢复校准的契机。
+如果断线时 `*(filtPtrs[i]) = NAN`，下次恢复时**首次读值直接设为 raw（不经过 EMA）**（`main.cpp:346-347`），所以重新校准后只需一次读数就能"重置滤波"，断线反而是恢复校准的契机。
 
 ### 6.4 我要换感测器
 
-更新 `src/main.cpp:35-37` 的 `DeviceAddress` 常量（8 字节十六进制），重新烧录。换下来的旧 ROM 不会被清出 EEPROM（EEPROM 不存 ROM 位址，ROM 是代码常量）。
+更新 `src/main.cpp:36-38` 的 `DeviceAddress` 常量（8 字节十六进制），重新烧录。换下来的旧 ROM 不会被清出 EEPROM（EEPROM 不存 ROM 位址，ROM 是代码常量）。
 
 获取新 ROM：调试时看启动 Serial 的 `doScan()` 输出，`[?]` 标记的就是未识别的设备，后面跟的 16 位十六进制串即为 ROM。
 
@@ -350,4 +349,4 @@ STA 默认凭据：`OPhone 12` / `qwer1234`，当 EEPROM 中 SSID 为空或 0xFF
 
 ---
 
-> 本文档基于 `src/main.cpp`（1120 行，含 EEPROM 段）、`camera/src/main.cpp`、`platformio.ini`、`README.md` 静态分析撰写，**源码未被修改**。任何阈值或 EEPROM 地址改动请同步本文。
+> 本文档基于 `src/main.cpp`（1240 行，含 EEPROM 段与 BME688）、`camera/src/main.cpp`、`platformio.ini`、`README.md` 静态分析撰写，**源码未被修改**。任何阈值或 EEPROM 地址改动请同步本文。

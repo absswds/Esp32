@@ -27,7 +27,7 @@ struct CfgState {
     char wifiPass[65] = "";
 };
 
-// ============ [MIRROR] saveState —— 镜像 main.cpp:373-390 ============
+// ============ [MIRROR] saveState —— 镜像 main.cpp:474-491 ============
 #include "Arduino.h"   // 复用 _EEPROMStub 桩
 
 static void saveStateLogic(const CfgState& s) {
@@ -50,7 +50,7 @@ static void saveStateLogic(const CfgState& s) {
     std::memcpy(EEPROM.mem, buf, sizeof(buf));
 }
 
-// ============ [MIRROR] loadState —— 镜像 main.cpp:392-419 ============
+// ============ [MIRROR] loadState —— 镜像 main.cpp:493-520 ============
 static CfgState loadStateLogic() {
     CfgState s;            // 代码默认值
     if (EEPROM.mem[0] != 0xAA) return s;
@@ -77,7 +77,7 @@ static CfgState loadStateLogic() {
     return s;
 }
 
-// ============ [MIRROR] API constrain 范围 —— 镜像 handleControl() main.cpp:296-365 ============
+// ============ [MIRROR] API constrain 范围 —— 镜像 handleControl() main.cpp:397-466 ============
 static float clampTargetTemp(float v) { return v < 10.0f ? 10.0f : (v > 40.0f ? 40.0f : v); }
 static float clampHyst(float v)        { return v < 0.01f ? 0.01f : (v > 3.0f ? 3.0f : v); }
 static float clampSafeMin(float v)    { return v < 0.0f ? 0.0f : (v > 20.0f ? 20.0f : v); }

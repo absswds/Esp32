@@ -1,11 +1,11 @@
 // PlatformIO Unity 测试：纯逻辑模块（无硬件依赖，可直接在 native 跑过）
 //
 // 这些测试覆盖 src/main.cpp 中**可独立验证的纯算法片段**：
-//   1) sameAddr（ROM 字节比较）            —— main.cpp:870-873
-//   2) EMA 温度滤波                        —— main.cpp:254-258
-//   3) DS18B20 读值范围合法化（-55~85 以外判 NAN）—— main.cpp:247-251
-//   4) NAN 计数去抖逻辑（nanCount >= 3 才断电）—— main.cpp:161-174 + loop() L1071
-//   5) EEPROM saveState/loadState 的地址布局契约 —— main.cpp:373-419
+//   1) sameAddr（ROM 字节比较）            —— main.cpp:987-990
+//   2) EMA 温度滤波                        —— main.cpp:346-351
+//   3) DS18B20 读值范围合法化（-55~85 以外判 NAN）—— main.cpp:339-344
+//   4) NAN 计数去抖逻辑（nanCount >= 3 才断电）—— main.cpp:177-190 + loop() L1190
+//   5) EEPROM saveState/loadState 的地址布局契约 —— main.cpp:474-520
 //
 // 由于 src/main.cpp 是单文件 Arduino sketch 且依赖大量 Arduino API（WebServer / OneWire /
 // DallasTemperature / U8g2 / ledc 等），**目前无法直接 #include src/main.cpp 在 native 编译**。
@@ -21,7 +21,7 @@
 #include <cstdio>
 #include "Arduino.h"   // EEPROM 桩（setUp 中 begin(256)）；其余镜像实现见下
 
-// ============ [MIRROR] sameAddr —— 镜像 main.cpp:870-873 ============
+// ============ [MIRROR] sameAddr —— 镜像 main.cpp:987-990 ============
 // 注意：DeviceAddress 在 DallasTemperature lib 中是 `uint8_t[8]`。
 typedef uint8_t DeviceAddress[8];
 static bool sameAddr(const DeviceAddress a, const DeviceAddress b) {
@@ -29,14 +29,14 @@ static bool sameAddr(const DeviceAddress a, const DeviceAddress b) {
     return true;
 }
 
-// ============ [MIRROR] EMA 滤波 —— 镜像 main.cpp:254-258 ============
+// ============ [MIRROR] EMA 滤波 —— 镜像 main.cpp:346-351 ============
 static const float EMA_ALPHA = 0.5f;
 static float emaStep(float prev, float raw) {
     if (std::isnan(prev)) return raw;          // 首次或断线后初始化
     return EMA_ALPHA * raw + (1 - EMA_ALPHA) * prev;
 }
 
-// ============ [MIRROR] DS18B20 范围合法化 —— 镜像 main.cpp:247-251 ============
+// ============ [MIRROR] DS18B20 范围合法化 —— 镜像 main.cpp:339-344 ============
 static const float DEVICE_DISCONNECTED_F = -196.0f;
 static float sanitizeTemp(float raw) {
     if (raw == DEVICE_DISCONNECTED_F || std::isnan(raw) || raw < -55.0f || raw > 85.0f) {
@@ -45,7 +45,7 @@ static float sanitizeTemp(float raw) {
     return raw;
 }
 
-// ============ [MIRROR] NaN 计数去抖 —— 镜像 main.cpp:161-174 / loop() L1071 ============
+// ============ [MIRROR] NaN 计数去抖 —— 镜像 main.cpp:177-190 / loop() L1190 ============
 // 输入：(本次三个温度是否有 NAN, 当前 nanCount) -> 输出：(是否触发紧急停止, 新 nanCount)
 struct NanGuardResult { bool emergency; int newCount; };
 static NanGuardResult nanGuard(bool anyNan, int priorCount) {

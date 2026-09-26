@@ -56,7 +56,7 @@ struct ControlInputs {
     // cooling/heating / coolingHeating 标志位（用于检测"刚切出"）—— 简化
 };
 
-// ============ [MIRROR] controlTemp 决策核心 —— 镜像 main.cpp:154-222 ============
+// ============ [MIRROR] controlTemp 决策核心 —— 镜像 main.cpp:170-238 ============
 // 警告：这是为了可测性的简化复刻；真正源码同步需用 diff 校验两版差异。
 static void controlTempLogic(ControlInputs& st, int& nanCount) {
     if (!st.systemOn || st.tecManual || st.manualMode) return;
