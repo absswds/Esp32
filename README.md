@@ -111,6 +111,12 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 | OLED SCL | **22** | SCL | OLED SCL | I2C 專用腳 |
 | OLED VCC | — | 3.3V | OLED VCC | SSD1306 吃 3.3V |
 | OLED GND | — | GND | OLED GND | |
+| BME680 SDA（藍） | **21** | SDA | 與 OLED SDA 並聯 | I2C |
+| BME680 SCL（黃） | **22** | SCL | 與 OLED SCL 並聯 | I2C |
+| BME680 VCC（紅） | — | 3.3V | | 不要接 5V |
+| BME680 GND（黑） | — | GND | | |
+| BME680 ADDR（橙） | — | GND | | 位址 0x76（接 3.3V 則 0x77，程式兩個都試） |
+| BME680 CS（綠） | **23** | MOSI | 程式開機拉高 = I2C 模式 | 也可直接接 3.3V |
 
 > ⚠️ **TEC 電源線已對調（重要）：** H 橋輸出到 TEC 的兩根線已交換，使代碼的「製冷/加熱」方向與實際冷熱面一致。**不要**再對調回來——除非更換 TEC 模組後重新驗證方向。驗證方法：設 `/test?cool=255&heat=0&en=1`，摸 TEC 冷面（貼冷端換熱器那面）應變冷。
 

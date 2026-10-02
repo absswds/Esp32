@@ -158,6 +158,34 @@ void test_eeprom_layout_constants(void) {
     TEST_ASSERT_TRUE(133 <= 256);    // 总占用未超 EEPROM.begin(256)
 }
 
+// ============ [MIRROR] BME680 溫控聯動規則 —— 鏡像 main.cpp bmeWantsVent() / dewRisk() ============
+static const float BME_HUM_VENT = 80.0f, BME_IAQ_VENT = 150.0f, BME_DEW_MARGIN = 1.0f;
+static bool bmeWantsVent(float h, float iaq, int acc) {
+    return (!std::isnan(h) && h >= BME_HUM_VENT) || (!std::isnan(iaq) && acc >= 1 && iaq >= BME_IAQ_VENT);
+}
+static bool dewRisk(float ventT, float dp) {
+    return !std::isnan(ventT) && !std::isnan(dp) && ventT < dp + BME_DEW_MARGIN;
+}
+
+void test_bme_vent_humidity_threshold(void) {
+    TEST_ASSERT_FALSE(bmeWantsVent(79.9f, NAN, 0));
+    TEST_ASSERT_TRUE(bmeWantsVent(80.0f, NAN, 0));
+}
+void test_bme_vent_iaq_needs_accuracy(void) {
+    TEST_ASSERT_FALSE(bmeWantsVent(50.0f, 200.0f, 0));   // 準確度 0：IAQ 不可信，不動作
+    TEST_ASSERT_TRUE(bmeWantsVent(50.0f, 200.0f, 1));
+    TEST_ASSERT_FALSE(bmeWantsVent(50.0f, 149.0f, 3));
+}
+void test_bme_vent_all_nan_noop(void) {
+    TEST_ASSERT_FALSE(bmeWantsVent(NAN, NAN, 3));
+}
+void test_dew_risk_margin(void) {
+    TEST_ASSERT_TRUE(dewRisk(15.9f, 15.0f));    // 出風口 < 露點 + 1
+    TEST_ASSERT_FALSE(dewRisk(16.0f, 15.0f));
+    TEST_ASSERT_FALSE(dewRisk(NAN, 15.0f));
+    TEST_ASSERT_FALSE(dewRisk(10.0f, NAN));
+}
+
 int main(int argc, char** argv) {
     // ---- test_control_policy.cpp / test_eeprom_config.cpp 的用例（PIO native 单程序链接） ----
     void test_noop_when_system_off(void);
@@ -220,5 +248,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_clamp_ventMax_boundaries);
     RUN_TEST(test_clamp_hysteresis_boundaries);
     RUN_TEST(test_clamp_offset_signed);
+    RUN_TEST(test_bme_vent_humidity_threshold);
+    RUN_TEST(test_bme_vent_iaq_needs_accuracy);
+    RUN_TEST(test_bme_vent_all_nan_noop);
+    RUN_TEST(test_dew_risk_margin);
     return UNITY_END();
 }

@@ -6,7 +6,8 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <U8g2lib.h>
-#include <Adafruit_BME680.h>
+#include <bsec2.h>
+#include <Preferences.h>
 #include <EEPROM.h>
 #include <ESPmDNS.h>
 #include "esp_task_wdt.h"
@@ -45,20 +46,43 @@ bool nestOK = false, roomOK = false, ventOK = false;
 float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
 
-// ---- BME688：箱內溫濕壓 + Gas（I2C，與 OLED 並線 GPIO21/22）----
-// 註：BME688 與 BME680 暫存器/chip id 相容，故用 Adafruit BME680 驅動（未用 BSEC）
-Adafruit_BME680 bme;
-bool bmeOk = false;            // BME688 是否在線
-bool bmeMeasuring = false;     // 非阻塞讀取狀態機：量測進行中
-unsigned long bmeDue = 0;      // 本次量測完成時刻（millis）
-unsigned long lastBme = 0;     // 上次觸發讀取
+// ---- BME680：箱內溫濕壓 + IAQ（I2C，與 OLED 並線 GPIO21/22）----
+// 用 Bosch BSEC2 演算法庫：輸出自熱補償後的溫濕度 + IAQ / CO2 當量 / VOC 當量
+// 設定檔 bme680_iaq_33v_3s_4d：BME680、3.3V 供電、LP 模式每 3 秒一筆、4 天校準窗口
+#define BME_CS_PIN 23              // 模組 CS → GPIO23（FireBeetle 板標 MOSI），拉高 = I2C 模式；CS 直接接 3.3V 也行
+const uint8_t bsecConfig[] = {
+#include "config/bme680/bme680_iaq_33v_3s_4d/bsec_iaq.txt"
+};
+Bsec2 bsec;
+Preferences bsecPrefs;             // BSEC 校準狀態存 NVS（不佔 EEPROM 版面）
+bool bmeOk = false;                // BME680 是否在線
+unsigned long bmeLastData = 0;     // 上次收到 BSEC 輸出（millis）
 unsigned long lastBmeRetry = 0;
-int bmeFailCount = 0;          // 連續失敗次數，達 3 次標記離線
-const unsigned long BME_INTERVAL_MS = 10000;   // 10 秒一次（降低加熱器自熱佔空比）
-const unsigned long BME_BURNIN_MS = 600000;    // 前 10 分鐘為 Gas 燒機期，數值勿引用
-const float BME_GAS_ALPHA = 0.02f;             // Gas 基線慢速 EMA（時間常數 ~8 分鐘）
-float bmeT = NAN, bmeH = NAN, bmeP = NAN, bmeGas = NAN, bmeDP = NAN, bmeGasRel = NAN;
-float bmeGasBase = NAN;        // Gas 基線（相對法 100%）
+unsigned long lastBsecSave = 0;
+int bmeFailCount = 0;              // run() 連續失敗次數，達 3 次標記離線
+const unsigned long BME_STALE_MS = 30000;          // 30 秒沒新資料 → 視為失聯
+const unsigned long BSEC_SAVE_MS = 6UL * 3600000;  // 每 6 小時存一次校準狀態
+float bmeT = NAN, bmeH = NAN, bmeP = NAN, bmeGas = NAN, bmeDP = NAN;
+float bmeIaq = NAN, bmeCo2 = NAN, bmeVoc = NAN;
+int bmeIaqAcc = 0;                 // IAQ 準確度 0–3（0 = 剛開機/穩定中，3 = 已校準）
+uint8_t lastSavedAcc = 0;
+int bmeCtl = 0;                   // BME 溫控聯動狀態：0 無，1 風扇低速換氣，2 防結露製冷減半
+
+// BME 參與溫控的閾值（僅自動模式；BME 離線或資料過期時全部不生效）
+const float BME_HUM_VENT = 80.0f;    // 濕度 ≥ 80% → 維持區間內風扇低速運轉
+const float BME_IAQ_VENT = 150.0f;   // IAQ ≥ 150（準確度 ≥1）→ 同上
+const int FAN_VENT_SPEED = 100;      // ~40%
+const float BME_DEW_MARGIN = 1.0f;   // 製冷時出風口 < 露點 + 1°C → 製冷功率減半，防結露
+
+bool bmeFresh() { return bmeOk && bmeLastData > 0 && millis() - bmeLastData < BME_STALE_MS; }
+
+// 純邏輯（test/test_pure_logic.cpp 有鏡像測試）
+bool bmeWantsVent(float h, float iaq, int acc) {
+  return (!isnan(h) && h >= BME_HUM_VENT) || (!isnan(iaq) && acc >= 1 && iaq >= BME_IAQ_VENT);
+}
+bool dewRisk(float ventT, float dp) {
+  return !isnan(ventT) && !isnan(dp) && ventT < dp + BME_DEW_MARGIN;
+}
 
 int fanSpeed = 0;
 float targetTemp = 28.0;   // 單一目標溫度
@@ -178,6 +202,7 @@ void setTecPwm(float power, bool isCool) {
 }
 
 void controlTemp() {
+  bmeCtl = 0;
   if (!systemOn || tecManual || manualMode) return;
 
   // === 保護 0：感測器斷線 → 緊急斷電（#7）===
@@ -222,7 +247,15 @@ void controlTemp() {
   }
 
   // === 製冷/加熱/維持 ===
+  // BME 只做輔助：離線/過期時以下兩條都不生效，溫控照舊只看 DS18B20
+  bool bf = bmeFresh();
   if (nestT > targetTemp + hysteresis) {
+    // 防結露：出風口溫度已接近箱內露點 → 製冷功率減半
+    if (bf && dewRisk(ventT, bmeDP)) {
+      throttle *= 0.5f;
+      bmeCtl = 2;
+      Serial.printf("[BME] 出風口 %.1f°C 接近露點 %.1f°C → 製冷減半\n", ventT, bmeDP);
+    }
     setTecPwm(throttle, true);
     if (!fanManual) setFan(255);
   } else if (nestT < targetTemp - hysteresis) {
@@ -241,62 +274,39 @@ void controlTemp() {
         Serial.printf("[FAN] 延遲中 speed=%d remain=%lu\n", FAN_AFTERRUN_SPEED, (unsigned long)FAN_AFTERRUN_MS - (millis() - fanAfterRunTimer));
       } else {
         fanAfterRunTimer = 0;
-        setFan(0);
+        // 維持區間內：濕度高或空氣差 → 風扇低速循環，否則關
+        if (bf && bmeWantsVent(bmeH, bmeIaq, bmeIaqAcc)) { setFan(FAN_VENT_SPEED); bmeCtl = 1; }
+        else setFan(0);
       }
     }
   }
 }
 
-// ---- BME688 初始化 / 非阻塞讀取 ----
-void bmeInit(bool quiet = false) {
-  uint8_t addr = 0;
-  if (bme.begin(0x76)) addr = 0x76;
-  else if (bme.begin(0x77)) addr = 0x77;
-  if (addr == 0) {
-    bmeOk = false;
-    if (!quiet) Serial.println("[BME] 未偵測到 BME688（0x76/0x77 無回應）——環境欄位顯示 --");
-    return;
-  }
-  bme.setTemperatureOversampling(BME680_OS_8X);
-  bme.setHumidityOversampling(BME680_OS_2X);
-  bme.setPressureOversampling(BME680_OS_4X);
-  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  bme.setGasHeater(320, 150);   // 320°C / 150ms
-  bmeOk = true;
-  bmeMeasuring = false;
-  bmeFailCount = 0;
-  Serial.printf("[BME] 就緒 @0x%02X（溫濕壓 + Gas，加熱器 320C/150ms，週期 %lus）\n",
-                addr, BME_INTERVAL_MS / 1000);
+// ---- BME680 / BSEC2 初始化與讀取 ----
+void bsecSaveState() {
+  uint8_t st[BSEC_MAX_STATE_BLOB_SIZE];
+  if (!bsec.getState(st)) { Serial.printf("[BME] 取校準狀態失敗 status=%d\n", bsec.status); return; }
+  bsecPrefs.putBytes("state", st, BSEC_MAX_STATE_BLOB_SIZE);
+  lastBsecSave = millis();
+  Serial.printf("[BME] 校準狀態已存（IAQ 準確度 %d）\n", bmeIaqAcc);
 }
 
-// 非阻塞狀態機（與 DS18B20 同思路）：beginReading() 記下完成時刻，時間到才 endReading() 取值，不阻塞 loop
-void bmeTick() {
-  if (!bmeOk) {
-    // 熱插拔：離線時每 60 秒重試一次（與 OLED 5 秒探測同一思路）
-    if (millis() - lastBmeRetry >= 60000) { lastBmeRetry = millis(); bmeInit(true); }
-    return;
-  }
-  if (!bmeMeasuring) {
-    if (millis() - lastBme < BME_INTERVAL_MS) return;
-    lastBme = millis();
-    unsigned long due = bme.beginReading();
-    if (due == 0) {
-      if (++bmeFailCount >= 3) { bmeOk = false; Serial.println("[BME] 連續失敗 → 標記離線，持續重試"); }
-      else Serial.println("[BME] beginReading 失敗");
-      return;
+void onBsecData(const bme68xData data, const bsecOutputs outputs, Bsec2 b) {
+  for (uint8_t i = 0; i < outputs.nOutputs; i++) {
+    const bsecData& o = outputs.output[i];
+    switch (o.sensor_id) {
+      case BSEC_OUTPUT_IAQ: bmeIaq = o.signal; bmeIaqAcc = o.accuracy; break;
+      case BSEC_OUTPUT_CO2_EQUIVALENT: bmeCo2 = o.signal; break;
+      case BSEC_OUTPUT_BREATH_VOC_EQUIVALENT: bmeVoc = o.signal; break;
+      case BSEC_OUTPUT_RAW_PRESSURE: bmeP = o.signal; break;                 // 庫內已轉 hPa
+      case BSEC_OUTPUT_RAW_GAS: bmeGas = o.signal / 1000.0f; break;          // Ω → kΩ
+      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE: bmeT = o.signal; break;
+      case BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY: bmeH = o.signal; break;
+      default: break;
     }
-    bmeDue = due;
-    bmeMeasuring = true;
-    return;
   }
-  if ((long)(millis() - bmeDue) < 0) return;   // 量測還沒完成，下一輪 loop 再看
-  bmeMeasuring = false;
-  if (!bme.endReading()) { Serial.println("[BME] 讀取失敗（沿用上一筆值）"); return; }
+  bmeLastData = millis();
   bmeFailCount = 0;
-  bmeT = bme.temperature;
-  bmeH = bme.humidity;
-  bmeP = bme.pressure / 100.0f;                                              // Pa → hPa
-  bmeGas = (bme.gas_resistance > 0) ? bme.gas_resistance / 1000.0f : NAN;    // Ω → kΩ（0 = 氣體未穩定）
   // 露點：Magnus 公式
   if (bmeH > 0 && bmeH <= 100) {
     float lg = logf(bmeH / 100.0f) + (17.62f * bmeT) / (243.12f + bmeT);
@@ -304,17 +314,71 @@ void bmeTick() {
   } else {
     bmeDP = NAN;
   }
-  // Gas 相對基線法：慢速 EMA 當 100%，只報相對變化（無絕對 ppm）
-  if (isnan(bmeGas)) {
-    bmeGasRel = NAN;
-  } else {
-    if (isnan(bmeGasBase)) bmeGasBase = bmeGas;
-    else bmeGasBase = (1 - BME_GAS_ALPHA) * bmeGasBase + BME_GAS_ALPHA * bmeGas;
-    bmeGasRel = (bmeGasBase > 0) ? (bmeGas / bmeGasBase * 100.0f) : NAN;
+  // 首次達到準確度 3 立即存一次，之後每 6 小時存一次
+  if ((bmeIaqAcc >= 3 && lastSavedAcc < 3) || (lastBsecSave > 0 && millis() - lastBsecSave >= BSEC_SAVE_MS)) {
+    lastSavedAcc = bmeIaqAcc;
+    bsecSaveState();
   }
-  Serial.printf("[BME] %.1fC %.1f%% %.1fhPa Gas:%.1fkΩ 相對:%.0f%% 露點:%.1fC%s\n",
-                bmeT, bmeH, bmeP, bmeGas, bmeGasRel, bmeDP,
-                (millis() < BME_BURNIN_MS) ? "（Gas 燒機期中）" : "");
+}
+
+void bmeInit(bool quiet = false) {
+  uint8_t addr = 0;
+  if (bsec.begin(BME68X_I2C_ADDR_LOW, Wire)) addr = BME68X_I2C_ADDR_LOW;
+  else if (bsec.begin(BME68X_I2C_ADDR_HIGH, Wire)) addr = BME68X_I2C_ADDR_HIGH;
+  if (addr == 0) {
+    bmeOk = false;
+    if (!quiet) Serial.println("[BME] 未偵測到 BME680（0x76/0x77 無回應）——環境欄位顯示 --");
+    return;
+  }
+  bsecSensor list[] = {
+    BSEC_OUTPUT_IAQ, BSEC_OUTPUT_CO2_EQUIVALENT, BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+    BSEC_OUTPUT_RAW_PRESSURE, BSEC_OUTPUT_RAW_GAS,
+    BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE, BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY
+  };
+  if (!bsec.setConfig(bsecConfig)) {
+    bmeOk = false;
+    Serial.printf("[BME] BSEC 設定檔載入失敗 status=%d\n", bsec.status);
+    return;
+  }
+  // 讀回上次存的校準狀態（沒有或損壞就從零開始校準）
+  uint8_t st[BSEC_MAX_STATE_BLOB_SIZE];
+  if (bsecPrefs.getBytes("state", st, sizeof(st)) == sizeof(st) && bsec.setState(st))
+    Serial.println("[BME] 已載入上次校準狀態");
+  bsec.setTemperatureOffset(TEMP_OFFSET_LP);
+  if (!bsec.updateSubscription(list, sizeof(list) / sizeof(list[0]), BSEC_SAMPLE_RATE_LP)) {
+    bmeOk = false;
+    Serial.printf("[BME] BSEC 訂閱失敗 status=%d\n", bsec.status);
+    return;
+  }
+  bsec.attachCallback(onBsecData);
+  bmeOk = true;
+  bmeFailCount = 0;
+  bmeLastData = millis();   // 給 30 秒時間產生第一筆
+  if (lastBsecSave == 0) lastBsecSave = millis();
+  Serial.printf("[BME] 就緒 @0x%02X（BSEC %d.%d.%d.%d，LP 每 3 秒，IAQ 需數小時~4 天校準）\n", addr,
+                bsec.version.major, bsec.version.minor, bsec.version.major_bugfix, bsec.version.minor_bugfix);
+}
+
+void bmeTick() {
+  if (!bmeOk) {
+    // 熱插拔：離線時每 60 秒重試一次
+    if (millis() - lastBmeRetry >= 60000) { lastBmeRetry = millis(); bmeInit(true); }
+    return;
+  }
+  if (!bsec.run()) {
+    if (++bmeFailCount >= 3) { bmeOk = false; Serial.printf("[BME] 連續失敗 → 標記離線（status=%d），持續重試\n", bsec.status); }
+    return;
+  }
+  if (millis() - bmeLastData >= BME_STALE_MS) {
+    bmeOk = false;
+    Serial.println("[BME] 30 秒無新資料 → 標記離線，持續重試");
+  }
+}
+
+void bmeLog() {
+  if (!bmeFresh()) return;
+  Serial.printf("[BME] %.1fC %.1f%% 露點:%.1fC %.1fhPa Gas:%.1fkΩ IAQ:%.0f(acc%d) CO2:%.0fppm VOC:%.2fppm\n",
+                bmeT, bmeH, bmeDP, bmeP, bmeGas, bmeIaq, bmeIaqAcc, bmeCo2, bmeVoc);
 }
 
 // 浮點 → JSON：NAN 輸出 null
@@ -387,20 +451,23 @@ void handleData() {
     if (isnan(tArr[i])) strcpy(tBuf[i], "null");
     else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
   }
-  // BME688 欄位（未接 = null，前端顯示 --）
-  char bT[8], bH[8], bP[10], bG[10], bR[8], bDP[8];
-  fmtOrNull(bT, sizeof(bT), bmeT, 2);
-  fmtOrNull(bH, sizeof(bH), bmeH, 1);
-  fmtOrNull(bP, sizeof(bP), bmeP, 1);
-  fmtOrNull(bG, sizeof(bG), bmeGas, 1);
-  fmtOrNull(bR, sizeof(bR), bmeGasRel, 0);
-  fmtOrNull(bDP, sizeof(bDP), bmeDP, 1);
-  char buf[1024];
+  // BME680 欄位（未接或資料過期 = null，前端顯示 --）
+  bool bf = bmeFresh();
+  char bT[8], bH[8], bP[10], bG[10], bDP[8], bI[8], bC[8], bV[10];
+  fmtOrNull(bT, sizeof(bT), bf ? bmeT : NAN, 2);
+  fmtOrNull(bH, sizeof(bH), bf ? bmeH : NAN, 1);
+  fmtOrNull(bP, sizeof(bP), bf ? bmeP : NAN, 1);
+  fmtOrNull(bG, sizeof(bG), bf ? bmeGas : NAN, 1);
+  fmtOrNull(bDP, sizeof(bDP), bf ? bmeDP : NAN, 1);
+  fmtOrNull(bI, sizeof(bI), bf ? bmeIaq : NAN, 0);
+  fmtOrNull(bC, sizeof(bC), bf ? bmeCo2 : NAN, 0);
+  fmtOrNull(bV, sizeof(bV), bf ? bmeVoc : NAN, 2);
+  char buf[1200];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"fanManual\":%s,\"strip\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"fanManual\":%s,\"strip\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeDP\":%s,\"bmeIaq\":%s,\"bmeIaqAcc\":%d,\"bmeCo2\":%s,\"bmeVoc\":%s,\"bmeCtl\":%d}",
     tBuf[0], tBuf[1], tBuf[2], n,
     fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode, fanManual ? "true" : "false", stripPct,
-    bmeOk ? "true" : "false", bT, bH, bP, bG, bR, bDP);
+    bf ? "true" : "false", bT, bH, bP, bG, bDP, bI, bmeIaqAcc, bC, bV, bmeCtl);
   server.send(200, "application/json", buf);
 }
 
@@ -677,10 +744,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei
       </div>
     </div>
     <div class="sec" id="bmeSec">
-      <h2>箱內環境 BME688 <span id="bmeState" style="float:right;font-size:.6rem;color:var(--t3);text-transform:none">--</span></h2>
+      <h2>箱內環境 BME680 <span id="bmeState" style="float:right;font-size:.6rem;color:var(--t3);text-transform:none">--</span></h2>
       <div class="info">
         溫度 <b id="bT">--</b>°C　濕度 <b id="bH">--</b>%　露點 <b id="bDP">--</b>°C<br>
-        氣壓 <b id="bP">--</b> hPa　氣體 <b id="bG">--</b> kΩ　相對基線 <b id="bR">--</b>%
+        氣壓 <b id="bP">--</b> hPa　氣體 <b id="bG">--</b> kΩ<br>
+        IAQ <b id="bI">--</b> <span id="bAcc" style="color:var(--t3)"></span>　CO₂ <b id="bC">--</b> ppm　VOC <b id="bV">--</b> ppm<br>
+        <span id="bCtl" style="color:var(--t3)">--</span>
       </div>
     </div>
     <div class="sec cam-sec" id="camSec">
@@ -822,7 +891,7 @@ function exportCSV(){
   function pad(n){return String(n).padStart(2,'0');}
   var fn='TEC_'+now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'_'+pad(now.getHours())+'-'+pad(now.getMinutes())+'-'+pad(now.getSeconds())+'.csv';
   var meta='# TEC 蟄眠實驗\n# 導出時間: '+ds+'\n';
-  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態,BME溫度,BME濕度,BME氣壓(hPa),BME氣體(kΩ),氣體相對(%),露點\n'+allData.map(function(r){return r.ti+','+(r.n==null?'':r.n.toFixed(2))+','+(r.r==null?'':r.r.toFixed(2))+','+(r.v==null?'':r.v.toFixed(2))+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持')+','+(r.bt==null?'':r.bt.toFixed(1))+','+(r.bh==null?'':r.bh.toFixed(1))+','+(r.bp==null?'':r.bp.toFixed(1))+','+(r.bg==null?'':r.bg.toFixed(1))+','+(r.br==null?'':Math.round(r.br))+','+(r.bdp==null?'':r.bdp.toFixed(1));}).join('\n');
+  var c='﻿'+meta+'時間,巢穴,活動區,出風口,風扇(%),狀態,BME溫度,BME濕度,BME氣壓(hPa),BME氣體(kΩ),露點,IAQ,IAQ準確度,CO2當量(ppm),VOC當量(ppm)\n'+allData.map(function(r){return r.ti+','+(r.n==null?'':r.n.toFixed(2))+','+(r.r==null?'':r.r.toFixed(2))+','+(r.v==null?'':r.v.toFixed(2))+','+Math.round(r.f*100/255)+','+(r.c?'製冷':r.h?'加熱':'維持')+','+(r.bt==null?'':r.bt.toFixed(1))+','+(r.bh==null?'':r.bh.toFixed(1))+','+(r.bp==null?'':r.bp.toFixed(1))+','+(r.bg==null?'':r.bg.toFixed(1))+','+(r.bdp==null?'':r.bdp.toFixed(1))+','+(r.bi==null?'':Math.round(r.bi))+','+(r.bi==null?'':r.ba)+','+(r.bc==null?'':Math.round(r.bc))+','+(r.bv==null?'':r.bv.toFixed(2));}).join('\n');
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download=fn;a.click();
   toast('已導出 '+allData.length+' 筆');
 }
@@ -902,10 +971,14 @@ async function doPoll(){
     document.getElementById('bDP').textContent=d.bmeDP==null?'--':d.bmeDP.toFixed(1);
     document.getElementById('bP').textContent=d.bmeP==null?'--':d.bmeP.toFixed(1);
     document.getElementById('bG').textContent=d.bmeGas==null?'--':d.bmeGas.toFixed(1);
-    document.getElementById('bR').textContent=d.bmeGasRel==null?'--':Math.round(d.bmeGasRel);
-    H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,br:d.bmeGasRel,bdp:d.bmeDP,ti:new Date().toLocaleTimeString()});
+    document.getElementById('bI').textContent=d.bmeIaq==null?'--':Math.round(d.bmeIaq);
+    document.getElementById('bAcc').textContent=d.bmeIaq==null?'':['(穩定中)','(校準中)','(校準中)','(已校準)'][d.bmeIaqAcc]||'';
+    document.getElementById('bC').textContent=d.bmeCo2==null?'--':Math.round(d.bmeCo2);
+    document.getElementById('bV').textContent=d.bmeVoc==null?'--':d.bmeVoc.toFixed(2);
+    document.getElementById('bCtl').textContent=['溫控聯動：無','溫控聯動：濕度/空氣差 → 風扇低速','溫控聯動：接近露點 → 製冷減半'][d.bmeCtl]||'';
+    H.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,bdp:d.bmeDP,ti:new Date().toLocaleTimeString()});
     if(H.length>M)H.shift();
-    allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,br:d.bmeGasRel,bdp:d.bmeDP,ti:new Date().toLocaleString()});
+    allData.push({n:d.nest,r:d.room,v:d.vent,f:d.fanSpeed,c:d.cooling,h:d.heating,bt:d.bmeT,bh:d.bmeH,bp:d.bmeP,bg:d.bmeGas,bdp:d.bmeDP,bi:d.bmeIaq,ba:d.bmeIaqAcc,bc:d.bmeCo2,bv:d.bmeVoc,ti:new Date().toLocaleString()});
     if(allData.length>ALLDATA_MAX)allData.shift();
     dC();
   }catch(e){
@@ -984,7 +1057,35 @@ unsigned long lastOled = 0;
 unsigned long lastOledCheck = 0;
 bool oledOnline = false;
 
+// BME680 頁：與主頁每 2 秒輪替（BME 離線時只顯示主頁）
+void drawBmePage() {
+  u8g2.setFont(u8g2_font_6x12_tr);
+  u8g2.setCursor(0, 10);
+  u8g2.print("Box:"); u8g2.print(bmeT, 1); u8g2.print("C ");
+  u8g2.print(bmeH, 0); u8g2.print("%");
+  u8g2.setCursor(0, 22);
+  u8g2.print("Dew:"); u8g2.print(bmeDP, 1); u8g2.print("C ");
+  u8g2.print(bmeP, 0); u8g2.print("hPa");
+  u8g2.setCursor(0, 34);
+  u8g2.print("IAQ:");
+  if (isnan(bmeIaq)) u8g2.print("---"); else u8g2.print((int)bmeIaq);
+  u8g2.print(bmeIaqAcc >= 3 ? " OK" : " cal"); u8g2.print(bmeIaqAcc);
+  u8g2.drawHLine(0, 38, 128);
+  u8g2.setCursor(0, 50);
+  u8g2.print("CO2:"); if (isnan(bmeCo2)) u8g2.print("---"); else u8g2.print((int)bmeCo2);
+  u8g2.print(" VOC:"); if (isnan(bmeVoc)) u8g2.print("---"); else u8g2.print(bmeVoc, 1);
+  u8g2.setCursor(0, 62);
+  u8g2.print(bmeCtl == 2 ? "Dew guard: TEC 50%" : bmeCtl == 1 ? "Humid/air: fan low" : "BME680");
+}
+
 void updateOLED() {
+  static bool bmePage = false;
+  bmePage = bmeFresh() && !bmePage;
+  if (bmePage) {
+    u8g2.firstPage();
+    do { drawBmePage(); } while (u8g2.nextPage());
+    return;
+  }
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
@@ -1111,6 +1212,10 @@ void setup() {
   EEPROM.begin(256);
   loadState();
 
+  // BME680 CS 拉高 = I2C 模式（掃描前先設好）
+  pinMode(BME_CS_PIN, OUTPUT); digitalWrite(BME_CS_PIN, HIGH);
+  bsecPrefs.begin("bsec", false);
+
   // 明確設定 I2C 腳位並掃描匯流排
   Wire.begin(21, 22);  // SDA=21, SCL=22
   Serial.print("[I2C] Scanning bus...");
@@ -1124,7 +1229,7 @@ void setup() {
   }
   Serial.printf(" (%d device(s))\n", i2cCount);
 
-  bmeInit();   // BME688（與 OLED 同一條 I2C）
+  bmeInit();   // BME680（與 OLED 同一條 I2C）
 
   u8g2.begin();
   u8g2.setContrast(128);
@@ -1260,7 +1365,9 @@ void loop() {
     doScan();
   }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
-  bmeTick();   // BME688 非阻塞讀取（每 10 秒一筆，不阻塞 loop）
+  bmeTick();   // BME680 / BSEC2：需頻繁呼叫，庫內按 3 秒節奏量測
+  static unsigned long lastBmeLog = 0;
+  if (millis() - lastBmeLog >= 10000) { lastBmeLog = millis(); bmeLog(); }
   // 定時檢查 OLED：拔掉再插回去也能自動恢復
   if (millis() - lastOledCheck >= 5000) {
     lastOledCheck = millis();
