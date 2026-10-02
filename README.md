@@ -105,8 +105,8 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 | DS18B20 GND | — | GND | 3 顆 DS18B20 並聯（黑線） | |
 | FAN PWM | **18** | SCK | 風扇 PWM 線 | 25kHz, 10-bit |
 | TEC EN | **19** | MISO | H-bridge EN 腳 | HIGH = 啟用 TEC |
-| TEC LPWM | **26** | **D3** | H-bridge 左半橋輸入 | 製冷方向 |
-| TEC RPWM | **25** | **D2** | H-bridge 右半橋輸入 | 加熱方向 |
+| TEC 製冷 PWM（`TEC_LPWM`） | **25** | **D2** | H-bridge 半橋輸入（D2 接的那路） | 製冷方向（2026-10-02 實測方向相反，代碼對調 25/26，線不動） |
+| TEC 加熱 PWM（`TEC_RPWM`） | **26** | **D3** | H-bridge 半橋輸入（D3 接的那路） | 加熱方向 |
 | OLED SDA | **21** | SDA | OLED SDA | I2C 專用腳 |
 | OLED SCL | **22** | SCL | OLED SCL | I2C 專用腳 |
 | OLED VCC | — | 3.3V | OLED VCC | SSD1306 吃 3.3V |
@@ -126,8 +126,8 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 
 | 板標 | 實際 GPIO | 可用？ | 說明 |
 |------|----------|--------|------|
-| D2 | 25 | ✅ | TEC RPWM（加熱）|
-| D3 | 26 | ✅ | TEC LPWM（製冷）|
+| D2 | 25 | ✅ | TEC 製冷 PWM |
+| D3 | 26 | ✅ | TEC 加熱 PWM |
 | D7 | 13 | ✅ | LED 燈帶 PWM（經 IRLZ44N 驅動 12V 燈帶；本板無 D4/GPIO27 引腳，見 DFRobot wiki DFR0654） |
 | D5 | 0 | ❌ Strapping | 勿用 |
 | D8 | 5 | ❌ Strapping | 勿用 |

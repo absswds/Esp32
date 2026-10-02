@@ -14,8 +14,9 @@
 
 #define FAN_PIN 18
 #define TEC_EN 19
-#define TEC_LPWM 26
-#define TEC_RPWM 25
+// 2026-10-02 實測網頁「製冷」實際在加熱 → 對調兩個 PWM 腳（線不動）：製冷訊號改走 GPIO25/D2，加熱改走 GPIO26/D3
+#define TEC_LPWM 25       // 製冷 PWM
+#define TEC_RPWM 26       // 加熱 PWM
 #define PWM_FREQ 25000
 #define PWM_RES 10         // 風扇 10-bit（與 TEC 一致）
 #define TEC_PWM_RES 10    // TEC 10-bit (finer control)

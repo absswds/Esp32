@@ -33,8 +33,8 @@
 |------|-----|------|------------------|------|------|
 | FAN | `FAN_PIN` | 18 | SCK | LEDC ch0 PWM 输出 | 风扇 PWM |
 | TEC EN | `TEC_EN` | 19 | MISO | 数字 OUT | H-bridge 使能，HIGH=ON |
-| TEC LPWM | `TEC_LPWM` | 26 | D3 | LEDC ch1 PWM 输出 | 制冷方向（**线已对调**，详见 README 注意事项） |
-| TEC RPWM | `TEC_RPWM` | 25 | D2 | LEDC ch2 PWM 输出 | 加热方向 |
+| TEC 制冷 PWM | `TEC_LPWM` | 25 | D2 | LEDC ch1 PWM 输出 | 制冷方向（2026-10-02 实测方向相反，代码对调 25/26，线不动） |
+| TEC 加热 PWM | `TEC_RPWM` | 26 | D3 | LEDC ch2 PWM 输出 | 加热方向 |
 | DS18B20 | `DS18B20_PIN` | 4 | **D12** | OneWire 双向 | 3 颗并联 + 4.7kΩ 上拉到 3.3V |
 | LED 灯带 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 数字/PWM OUT | **待装机**：经 IRLZ44N 驱动 12V COB 灯带（2026-09-10 锁版） |
 | OLED SDA | — | 21 | SDA | I2C 双向 | SSD1306 数据 |
