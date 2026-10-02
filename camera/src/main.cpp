@@ -34,6 +34,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
   Serial.printf("[STREAM] Client connected (fd=%d)\n", httpd_req_to_sockfd(req));
 
   unsigned long lastSend = millis();
+  unsigned long lastFrame = 0;
+  const unsigned long FRAME_INTERVAL_MS = 100;   // cap ~10 fps: keeps the TCP buffer from filling, so latency stays low
 
   while (true) {
     // Probe: detect if client disconnected (refreshed tab / closed browser)
@@ -49,6 +51,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
       Serial.printf("[STREAM] Client %d timeout\n", httpd_req_to_sockfd(req));
       break;
     }
+
+    if (millis() - lastFrame < FRAME_INTERVAL_MS) { delay(5); continue; }
 
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb) {
@@ -68,6 +72,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     esp_camera_fb_return(fb);
     if (!sent) break;
     lastSend = millis();
+    lastFrame = lastSend;
 
     // Yield to other tasks between frames
     delay(1);
@@ -223,8 +228,8 @@ void setup() {
   config.grab_mode    = CAMERA_GRAB_LATEST;
   config.fb_location  = CAMERA_FB_IN_PSRAM;
   config.fb_count     = 2;
-  // Balanced stream profile: VGA is 640x480, while JPEG 16 keeps hotspot bandwidth reasonable.
-  config.frame_size   = FRAMESIZE_VGA;
+  // Low-latency profile: QVGA 320x240 (~1/4 of VGA per frame) so frames don't queue up on the hotspot.
+  config.frame_size   = FRAMESIZE_QVGA;
   config.jpeg_quality = 16;
 
   if (!psramFound()) {
@@ -233,7 +238,7 @@ void setup() {
     config.fb_count    = 1;
     Serial.println("[CAM] No PSRAM, QVGA DRAM mode");
   } else {
-    Serial.println("[CAM] PSRAM found, UXGA buffer → QVGA stream");
+    Serial.println("[CAM] PSRAM found, QVGA stream");
   }
 
   esp_err_t err = esp_camera_init(&config);
@@ -241,7 +246,7 @@ void setup() {
   Serial.println("[CAM] Init OK");
 
   sensor_t *s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_VGA);
+  s->set_framesize(s, FRAMESIZE_QVGA);
   s->set_vflip(s, 1);
   s->set_hmirror(s, 0);
   s->set_brightness(s, 1);
