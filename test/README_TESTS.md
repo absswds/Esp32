@@ -11,6 +11,8 @@ pio test -e native
 # 结果：37/37 PASSED（1.5s）
 ```
 
+> **2026-10-04 新机复测：** pio（`~/.local/bin/pio`）+ WinLibs g++ 已装，`pio test -e native` → **41 test cases: 41 succeeded**（新增 4 个防结露 `condRiskNext` 用例）。
+
 注意：PlatformIO native 会把 `test/` 下所有 `test_*.cpp` 链接为**一个**程序，
 因此 `main()` / `setUp()` / `tearDown()` 只允许定义一次（统一在 `test_pure_logic.cpp`），
 `test_control_policy.cpp` 通过 `resetControlMocks()` 暴露 mock 重置入口。
@@ -68,6 +70,7 @@ pio test -e native --verbose
 | DS18B20 范围合法化 | `main.cpp:339-344` | 6 个用例（断线/超范围/边界/NaN 透传） |
 | NaN 计数去抖 | `main.cpp:177-190`, `:1190` | 3 个用例（恢复路径 / 3 次触发 / 0 glitch） |
 | EEPROM 地址布局契约 | `main.cpp:474-491` | 1 个用例（确保布局常量未被改坏） |
+| 防结露警示迟滞 `condRiskNext` | `main.cpp:344-349`（2026-10-04） | 4 个用例（`test_cond_enter_at_dp_plus_1` 露点+1 进入 / `test_cond_hysteresis_holds` 1–2°C 间保持 / `test_cond_exit_above_dp_plus_2` 露点+2 以上退出 / `test_cond_nan_clears` NaN 清除） |
 
 ### 🟡 骨架就绪但需策略调整（test_control_policy.cpp, test_eeprom_config.cpp）
 
