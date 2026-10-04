@@ -5,6 +5,8 @@
 > 如果只想知道"我现在改这个值会发生什么、改之前要注意什么"，请直接跳到 §6 "调参导引"。
 >
 > **状态（2026-09-10 收尾锁版）：** 引脚/阈值/EEPROM 布局已按现行 `src/main.cpp`（1240 行，含 BME688）核对；代码已知问题集中在 [../LIMITATIONS.md](../LIMITATIONS.md) #34~#37，锁版冻结不再改代码。
+>
+> **2026-10-04 解冻增补：** 传感器换装 BME680（1 Hz 温湿压 + 每 10 次量一次 Gas）、新增防结露警示 `condRisk`（仅警示）、断电自动恢复（LIMITATIONS #31）；`src/main.cpp` 现约 1340 行。新常量见 §3.4。
 
 ---
 
@@ -36,10 +38,10 @@
 | TEC LPWM | `TEC_LPWM` | 26 | D3 | LEDC ch1 PWM 输出 | 制冷方向（**线已对调**，详见 README 注意事项） |
 | TEC RPWM | `TEC_RPWM` | 25 | D2 | LEDC ch2 PWM 输出 | 加热方向 |
 | DS18B20 | `DS18B20_PIN` | 4 | **D12** | OneWire 双向 | 3 颗并联 + 4.7kΩ 上拉到 3.3V |
-| LED 灯带 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 数字/PWM OUT | **待装机**：经 IRLZ44N 驱动 12V COB 灯带（2026-09-10 锁版） |
+| LED 灯带 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 数字/PWM OUT | **已装机**（2026-10-04 用户确认）：经 IRLZ44N 驱动 12V COB 灯带 |
 | OLED SDA | — | 21 | SDA | I2C 双向 | SSD1306 数据 |
 | OLED SCL | — | 22 | SCL | I2C 双向 | SSD1306 时钟 |
-| BME688 | — | 21/22 | SDA/SCL | I2C 双向 | **待装机**：与 OLED 并线（同址 0x76/0x77 冲突时需改址） |
+| BME680 | — | 21/22 | SDA/SCL | I2C 双向 | **已装机**（2026-10-04 用户确认）：与 OLED 并线（同址 0x76/0x77 冲突时需改址） |
 
 > ⚠️ **板标 D13=GPIO12 是 strapping pin**：接 4.7kΩ 上拉会把 ESP32 误认为 1.8V flash 电压，可能致砖。**OneWire 必须接 D12（GPIO4），切勿接 D13**。
 >
@@ -68,7 +70,7 @@
 |------|------|------|
 | IR 灯控制 | GPIO47 | 数字 OUT，HIGH=ON |
 | LED 白光控制 | GPIO3 | 数字 OUT，HIGH=ON |
-| 摄像头 D0~D7 / XCLK / PCLK / VSYNC / HREF / SCCB | 16/18/21/17/14/7/6/4 + xclk=5 + pclk=15 + vsync=1 + href=2 + sda=8/scl=9 | OV2640 8-bit 并行数据 |
+| 摄像头 D0~D7 / XCLK / PCLK / VSYNC / HREF / SCCB | 16/18/21/17/14/7/6/4 + xclk=5 + pclk=15 + vsync=1 + href=2 + sda=8/scl=9 | OV3660 8-bit 并行数据（DFR1154 实际传感器；红外补光 940 nm，GPIO47） |
 
 相机引脚固定，**不要改**——这些是 DFR1154 厂商硬连接的板内走线，改 `camera_config_t` 引脚会失配导致无图像。
 
@@ -159,6 +161,20 @@
 - 想要更精细控制：缩小 `hysteresis`（如 0.1）。代价是死区边缘频繁切换。
 - 想要更平缓：加大 `hysteresis`（如 1.0）。代价是稳态偏差更大。
 - 切 PI 控制需在 `controlTemp()` 新增 `coolIntegral/heatIntegral/KI/maxRate` 等变量（本地开发笔记有逐步步骤，未随库发布）。
+
+### 3.4 BME680 / 防结露常量（2026-10-04 新增）
+
+| 参数 | 变量 | 默认 | 位置 | 说明 |
+|------|------|------|------|------|
+| 温湿压读取周期 | `BME_INTERVAL_MS` | `1000` ms | `main.cpp:57` | 1 Hz，加热器关闭 |
+| Gas 量测间隔 | `BME_GAS_EVERY` | `10` | `main.cpp:58` | 每 10 次读取开一次加热器（320°C/150ms）量 Gas，即 10 s 一次 |
+| Gas 烧机期 | `BME_BURNIN_MS` | `600000` ms | `main.cpp:63` | 上电前 10 分钟 Gas 值勿引用 |
+| Gas 基线 EMA | `BME_GAS_ALPHA` | `0.02f` | `main.cpp:64` | `bmeGasRel` 的分母 |
+| 结露警示进入余量 | `COND_ON_MARGIN` | `1.0f` °C | `main.cpp:70` | 出风口 ≤ 露点 + 1°C → `condRisk=true` |
+| 结露警示退出余量 | `COND_OFF_MARGIN` | `2.0f` °C | `main.cpp:71` | 出风口 > 露点 + 2°C → `condRisk=false`（中间保持，迟滞） |
+| BME 数据过期 | `COND_STALE_MS` | `30000` ms | `main.cpp:72` | BME 离线或 30 s 无成功读取 → `condRisk` 强制 false |
+
+`condRisk` **仅警示**（`/data` 字段、网页横幅、OLED `DEW`），不进入 `controlTemp()`，不写 EEPROM。出风口气温只是冷端表面的代理量，警示可能偏晚。
 
 ---
 
@@ -349,4 +365,4 @@ STA 默认凭据：`OPhone 12` / `qwer1234`，当 EEPROM 中 SSID 为空或 0xFF
 
 ---
 
-> 本文档基于 `src/main.cpp`（1240 行，含 EEPROM 段与 BME688）、`camera/src/main.cpp`、`platformio.ini`、`README.md` 静态分析撰写，**源码未被修改**。任何阈值或 EEPROM 地址改动请同步本文。
+> 本文档基于 `src/main.cpp`（1240 行，含 EEPROM 段与 BME688）、`camera/src/main.cpp`、`platformio.ini`、`README.md` 静态分析撰写，**源码未被修改**（2026-10-04 解冻改动见文首增补说明）。任何阈值或 EEPROM 地址改动请同步本文。

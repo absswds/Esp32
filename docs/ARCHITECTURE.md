@@ -2,7 +2,7 @@
 
 > 本文档对 ESP32 TEC 蟄眠實驗溫控系統做完整的架构层面梳理，涵盖两个独立固件目标的模块划分、数据流、状态机与并发模型。可独立阅读，无需先读其他文档。
 >
-> 源码分析基础（只读，未做任何修改）：`src/main.cpp`（1240 行，主 ESP，含 2026-09-19 `abc8f9a` BME688 接入）、`camera/src/main.cpp`（275 行，相机）、`platformio.ini` / `camera/platformio.ini`。行号于 2026-09-26 按当前版本重新核对。
+> 源码分析基础（只读，未做任何修改）：`src/main.cpp`（1240 行，主 ESP，含 2026-09-19 `abc8f9a` BME688 接入；**2026-10-04 解冻后约 1340 行**：换装 BME680、1 Hz 读取、防结露警示 `condRisk`、断电自动恢复——相关小节已更新，其余行号仍为 09-26 版本，请先 grep）、`camera/src/main.cpp`（275 行，相机）、`platformio.ini` / `camera/platformio.ini`。行号于 2026-09-26 按当前版本重新核对。
 
 ---
 
@@ -31,7 +31,7 @@
 │ TEC H-bridge (TEC_EN/LPWM/RPWM)    │◀▶│  · 纯 AP: ESP32-TEMP          │◀▶│ (仪表板)      │
 │ FAN PWM (GPIO18, LEDC ch0)         │   │  · STA+AP 备援: 连指定 WiFi   │   └──────────────┘
 │ SSD1306 OLED (I2C 21/22, 0x3C)     │   │ HTTP server port 80           │
-│ BME688 (同 I2C, 0x76/0x77, 仅监测) │   └───────────────────────────────┘
+│ BME680 (同 I2C, 0x76/0x77, 仅监测) │   └───────────────────────────────┘
 │ EEPROM (flash 模拟, 256B)         │
 └─────────────────────────────────────┘            ▲
                    ▲                                │ mDNS esp32-cam
@@ -41,7 +41,7 @@
 │ setup() → loop() 单线程 Arduino 调度                                  │
 │  · 感测层 readSensor()/controlTemp()  · HTTP 控制层 /control /test  │
 │  · 安全层 emergencyStop()/NAN 计数守卫 · 显示层 updateOLED()         │
-│  · 环境监测 bmeInit()/bmeTick()（BME688，不参与控制）                │
+│  · 环境监测 bmeInit()/bmeTick()（BME680，不参与控制）                │
 └──────────────────────────────────────────────────────────────────────┘
 
 ┌──────── 相机固件 camera/src/main.cpp（独立第二个 ESP32-S3）─────────┐
@@ -88,7 +88,8 @@
 | `STATE_SAVE_DEBOUNCE_MS=750` | 状态保存去抖 | 避免抖动频繁写 EEPROM |
 | DS18B20 ROM 常数 `nestAddr/roomAddr/ventAddr` | 8 字节 DeviceAddress | ROM 出厂位址认人 |
 | 安全阈值默认 `safeMin=5.0`, `safeMax=35.0`, `ventMax=50.0` | °C | 可被 `/control` 覆盖并持久化 |
-| `BME_INTERVAL_MS=10000`, `BME_BURNIN_MS=600000`, `BME_GAS_ALPHA=0.02f` | BME688 读取周期 / Gas 烧机期 / Gas 基线 EMA | 见 3.7 |
+| `BME_INTERVAL_MS=1000`, `BME_GAS_EVERY=10`, `BME_BURNIN_MS=600000`, `BME_GAS_ALPHA=0.02f` | BME680 温湿压读取周期（1 Hz）/ 每 N 次量一次 Gas / Gas 烧机期 / Gas 基线 EMA | 见 3.7 |
+| `COND_ON_MARGIN=1.0f`, `COND_OFF_MARGIN=2.0f`, `COND_STALE_MS=30000` | 防结露警示进入/退出余量（°C，相对露点）/ BME 数据过期判定 | 见 3.7 |
 
 ### 3.2 感测层（`main.cpp:316-362, 992-1037`）
 
@@ -107,7 +108,7 @@
 - `setTec(int cool, int heat)` — **手动 / `/test` 通道**：8-bit 0-255 放大 4 倍写到 TEC_L/R 通道，同步置 `cooling/heating` 标志。
 - `setTecPwm(float power, bool isCool)` — **自动 bang-bang 通道**：归一化 0-1.0 → 0-1023 PWM，单向驱动（另一方向写 0）。
 - `controlTemp()` — 安全 + bang-bang 五段式决策（详见 [6.1](#61-controltemp-状态机)）。
-- `emergencyStop()` / `stopAll()` / `startAll()` — 系统级状态切换，含风扇延迟逻辑。**`TEC_EN` 只在 `startAll()`（及 `/test?en=1`）中拉高**；`setup()` 先把它拉低，`loadState()` 恢复 `systemOn=true` 时不会再拉高——所以断电重启后网页显示"系统开着"，TEC 实际不工作（LIMITATIONS #31）。
+- `emergencyStop()` / `stopAll()` / `startAll()` — 系统级状态切换，含风扇延迟逻辑。**`TEC_EN` 只在 `startAll()`（及 `/test?en=1`）中拉高**；`setup()` 先把它拉低，2026-10-04 起若 `loadState()` 恢复出 `systemOn=true`，`setup()` 末尾会自动调用 `startAll()`（断电自动恢复，LIMITATIONS #31，未上机验证）。`emergencyStop()` 已把 `systemOn=false` 存入 EEPROM，所以紧急停机不会被重启复活。
 
 ### 3.4 网络层（`main.cpp:364-555, 1126-1181`）
 
@@ -132,12 +133,13 @@
 - `loadState()` — 上电恢复，含 `0xAA` 有效标记、`ventMax` 越界 clamp、`wifiMode>1` reset、SSID 0xFF 兼容默认回退。
 - `setWifiModeAndRestart(mode)` — `saveState()` + `delay(200)` + `ESP.restart()`，用于 WiFi 模式切换。
 
-### 3.7 环境监测层 BME688（`main.cpp:44-57, 241-308`，2026-09-19 `abc8f9a` 接入）
+### 3.7 环境监测层 BME680（`main.cpp:48-73, 263-359`，2026-09-19 `abc8f9a` 接入，2026-10-04 改 1 Hz + 防结露警示）
 
-- `bmeInit(quiet)` — 在 `setup()` 中 `Wire.begin(21,22)` 之后、`u8g2.begin()` 之前调用；依次探测 0x76 / 0x77，设过采样、IIR 与气体加热器 320°C/150ms。用 Adafruit BME680 驱动（与 BME688 寄存器兼容），**未用 BSEC**，因此没有 IAQ / eCO₂，只有气体电阻。
-- `bmeTick()` — 每次 `loop()` 调用的非阻塞状态机：`beginReading()` 记下完成时刻，到点才 `endReading()` 取值；每 10 s（`BME_INTERVAL_MS`）读一次。连续 3 次 `beginReading` 失败标记离线，离线后每 60 s 重试 `bmeInit(true)`（可热插拔）；单次 `endReading` 失败沿用上一笔。
+- `bmeInit(quiet)` — 在 `setup()` 中 `Wire.begin(21,22)` 之后、`u8g2.begin()` 之前调用；依次探测 0x76 / 0x77，设过采样、IIR 与气体加热器 320°C/150ms。用 Adafruit BME680 驱动（实际装的就是 BME680），**未用 BSEC**，因此没有 IAQ / eCO₂，只有气体电阻。
+- `bmeTick()` — 每次 `loop()` 调用的非阻塞状态机：`beginReading()` 记下完成时刻，到点才 `endReading()` 取值；每 1 s（`BME_INTERVAL_MS`）读一次温湿压，加热器平时关闭（`setGasHeater(0,0)`），每 `BME_GAS_EVERY`=10 次才开加热器量一次 Gas（即 10 s 一次，降低自热）；成功读取时更新 `lastBmeOk`。连续 3 次 `beginReading` 失败标记离线，离线后每 60 s 重试 `bmeInit(true)`（可热插拔）；单次 `endReading` 失败沿用上一笔。
 - 派生量：露点（Magnus 公式）；`bmeGasRel` = 气体电阻 ÷ 慢速 EMA 基线（`BME_GAS_ALPHA=0.02`）×100%。上电前 10 分钟（`BME_BURNIN_MS`）为燒機期，Gas 值不应引用。
-- 输出：`/data` 的 `bmeOk/bmeT/bmeH/bmeP/bmeGas/bmeGasRel/bmeDP` 字段；网页"箱內環境 BME688"面板；CSV 后 6 列。
+- 防结露警示：`updateCondRisk()` 每次 `loop()` 调用，用纯函数 `condRiskNext(prev, ventT, bmeDP)` 做迟滞——出风口 ≤ 露点 + `COND_ON_MARGIN`(1°C) 进入、> 露点 + `COND_OFF_MARGIN`(2°C) 退出；BME 离线或数据超过 `COND_STALE_MS`(30 s) 未更新时强制为 false。**仅警示，不影响 `controlTemp()`**。出风口气温只是冷端表面的代理量（冷端表面更冷），警示可能偏晚。
+- 输出：`/data` 的 `bmeOk/bmeT/bmeH/bmeP/bmeGas/bmeGasRel/bmeDP/condRisk` 字段；网页 BME 面板 + 结露风险横幅；OLED Vent 行 `DEW` 标记；CSV 后 6 列。
 - **与控制完全解耦**：不参与 `controlTemp()`、阈值、安全逻辑，也不写 EEPROM。
 
 ---
@@ -186,7 +188,7 @@ VGA 640×480 / JPEG quality 16 / `CAMERA_GRAB_LATEST` / `fb_count=2` / `fb_locat
         digitalWrite(TEC_EN)
 
         旁路输出：
-        ┌────────── bmeTick()（BME688，每 10s）┐ →  bmeT/H/P/Gas/DP，只进 /data 与 CSV，不进控制
+        ┌────────── bmeTick()（BME680，1 Hz）──┐ →  bmeT/H/P/Gas/DP，只进 /data 与 CSV，不进控制
         ┌────────── /data JSON ──────────┐  →  浏览器仪表板
         └────────── updateOLED() ────────┘  →  SSD1306
         └────────── EEPROM saveState() ──┘  →  flash 持久化
@@ -341,7 +343,7 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 | F2 | OneWire 总线无设备（`!dsOk`） | `doScan()` `cnt==0` | 重新 doScan 每 10s | 缺口范围较窄（§6.4）：只有在已有探头缺失、重扫发现 0 设备后，`readSensor()` 顶端 `if(!dsOk) return` 才会让 `nanCount` 停止增长 → **不急停**，旧 TEC 状态残留（LIMITATIONS #36，锁版未修）；三颗都在线时整体掉线仍会走 NAN 路径急停 |
 | F3 | 出風口过热 `ventT>=ventMax` | `controlTemp()` guard2 | 紧急断电 + saveState | 出风口探头 NAN 时 guard1 先行，guard2 不执行；在 nanCount 累到 3 之前（约 12 s）TEC 继续按上次决策运行；手动模式下不检查 |
 | F4 | H-bridge MOSFET fail-short | 无软件检测 | 仅靠 ventT 反馈 | 软件无法干预，需硬件温度保险（LIMITATIONS #32） |
-| F5 | 主 ESP `loop()` 卡死 / 断电重启 | TWDT (7s 实际) | 看门狗复位 → setup → loadState 恢复参数与 `systemOn` | `setup()` 早期 `digitalWrite(TEC_EN, LOW)` 关 TEC，相对安全；但**之后没有任何地方重新拉高 TEC_EN**（只有 `startAll()` 会），所以 `systemOn` 虽恢复为 true、网页显示在制冷，TEC 实际不工作。对策：重启后先"停止"再"开启"（LIMITATIONS #31） |
+| F5 | 主 ESP `loop()` 卡死 / 断电重启 | TWDT (7s 实际) | 看门狗复位 → setup → loadState 恢复参数与 `systemOn` | `setup()` 早期 `digitalWrite(TEC_EN, LOW)` 关 TEC；2026-10-04 起 `systemOn=true` 时 `setup()` 末尾自动 `startAll()` 恢复运行（LIMITATIONS #31，未上机验证）；紧急停机已存 `systemOn=false`，不会被复活 |
 | F6 | WiFi AP 启动失败 | 无显式检查 | 无降级，OLED/Serial 仍工作 | 远程监控失效，但本地控制台不受影响 |
 | F7 | WiFi 模式切换（STA+AP）连不上 | `setup()` 内 20 次重试 | 失败回退 AP | 切换后总要 `ESP.restart()`，期间短时离线 |
 | F8 | OLED 离线 | `loop()` 5s I2C 探测 | 自动 `u8g2.begin()` 重连 | 良好 |
@@ -350,7 +352,7 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 | F11 | 串流慢客户端 | `send_wait_timeout=1` + send(fd,0) probe | 1 秒超时断开 | 不再阻塞其他客户端 |
 | F12 | 帧缓冲泄漏（发送失败） | `esp_camera_fb_return(fb)` 总是调用 | 防止 PSRAM 耗尽 | 已修复 |
 | F13 | DS18B20 上电复位值 85.0°C（探头接触不良、掉电重连时出现） | 范围检查 `raw > 85.0` 才判 NAN，**85.0 本身被接受** | 无 | 85°C 进入 EMA（断线后首值不经滤波直接等于 85）；出风口会误触 `ventT>=ventMax` 急停，巢穴会误入极端分支。0826 CSV 有实例：16:22:57 出风 56.16°C 触发一次误急停（LIMITATIONS #37） |
-| F14 | BME688 离线 | `bmeTick()` 连续 3 次 `beginReading` 失败 | 标记离线，每 60 s 重试 | 与控制无关，`/data` 字段变 `null` |
+| F14 | BME680 离线 | `bmeTick()` 连续 3 次 `beginReading` 失败 | 标记离线，每 60 s 重试 | 与控制无关，`/data` 字段变 `null`；`condRisk` 强制为 false（数据过期 30 s 同理） |
 
 ---
 
@@ -358,7 +360,7 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 
 以下是从架构层面（非细节 bug）观察到的限制，会限制后续可扩展性：
 
-1. **单文件巨 sketch**：`src/main.cpp` 1240 行包含感测、控制、HTTP、HTML、OLED、EEPROM、BME688，模块边界靠注释组织，不利于单元测试与并行开发。这是本系统**只能写 mirror 测试、无法直接测源码**（见 `test/README_TESTS.md`）的最大根因。
+1. **单文件巨 sketch**：`src/main.cpp` 约 1340 行包含感测、控制、HTTP、HTML、OLED、EEPROM、BME680，模块边界靠注释组织，不利于单元测试与并行开发。这是本系统**只能写 mirror 测试、无法直接测源码**（见 `test/README_TESTS.md`）的最大根因。
 2. **无感测/控制抽象层**：温度读、决策、PWM 写三件事在 `controlTemp()` 内耦合，无法在 PC 上跑逻辑测试（必须 mock OneWire/Dallas/WebServer/ledc 全套 Arduino-API）。
 3. **状态散落全局变量**：`systemOn/cooling/heating/nanCount` 等十余个全局变量无封装，任何函数都能改（目前 HTTP handler 与感测都在 `loop()` 任务内串行执行，没有并发竞争；但若日后改成多任务就需要加锁）。
 4. **HTML/CSS/JS 在 PROGMEM 内 raw 字符串中**：~380 行前端代码无法 lint、无法类型检查、无法复用组件，靠 `R"HTML(...)"` 维护极脆弱。
@@ -375,7 +377,8 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 |--------|------|
 | 引脚定义 | `src/main.cpp:14-24` |
 | ROM 位址 | `src/main.cpp:36-38` |
-| BME688 全局与常量 | `src/main.cpp:44-57` |
+| BME680 全局与常量（含 `COND_*`） | `src/main.cpp:48-73` |
+| `bmeInit` / `bmeTick` / `condRiskNext` / `updateCondRisk` | `src/main.cpp:263-359` |
 | 安全阈值默认 | `src/main.cpp:84-86` |
 | `setFan` / `setTec` / `setTecPwm` | `main.cpp:109-168` |
 | `stopAll`/`startAll`/`emergencyStop` | `main.cpp:125-152` |

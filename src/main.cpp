@@ -45,20 +45,32 @@ bool nestOK = false, roomOK = false, ventOK = false;
 float nestT = NAN, roomT = NAN, ventT = NAN;
 float readTemps[3] = {NAN, NAN, NAN};
 
-// ---- BME688：箱內溫濕壓 + Gas（I2C，與 OLED 並線 GPIO21/22）----
-// 註：BME688 與 BME680 暫存器/chip id 相容，故用 Adafruit BME680 驅動（未用 BSEC）
+// ---- BME680：箱內溫濕壓 + Gas（I2C，與 OLED 並線 GPIO21/22）----
+// 用 Adafruit BME680 驅動（未用 BSEC）
 Adafruit_BME680 bme;
-bool bmeOk = false;            // BME688 是否在線
+bool bmeOk = false;            // BME680 是否在線
 bool bmeMeasuring = false;     // 非阻塞讀取狀態機：量測進行中
 unsigned long bmeDue = 0;      // 本次量測完成時刻（millis）
 unsigned long lastBme = 0;     // 上次觸發讀取
 unsigned long lastBmeRetry = 0;
 int bmeFailCount = 0;          // 連續失敗次數，達 3 次標記離線
-const unsigned long BME_INTERVAL_MS = 10000;   // 10 秒一次（降低加熱器自熱佔空比）
+const unsigned long BME_INTERVAL_MS = 1000;    // 溫濕壓 1 Hz（加熱器關）
+const int BME_GAS_EVERY = 10;                  // 每 10 筆開一次加熱器量 Gas（= 10 秒，降低自熱佔空比）
+int bmeCycle = 0;              // 讀取計數，決定本筆是否量 Gas
+bool bmeGasCycle = false;      // 本筆是否為 Gas 筆
+bool bmeHeaterOn = true;       // 目前加熱器設定（bmeInit 開啟）
+unsigned long lastBmeOk = 0;   // 上次成功讀取（防結露判斷的新鮮度）
 const unsigned long BME_BURNIN_MS = 600000;    // 前 10 分鐘為 Gas 燒機期，數值勿引用
 const float BME_GAS_ALPHA = 0.02f;             // Gas 基線慢速 EMA（時間常數 ~8 分鐘）
 float bmeT = NAN, bmeH = NAN, bmeP = NAN, bmeGas = NAN, bmeDP = NAN, bmeGasRel = NAN;
 float bmeGasBase = NAN;        // Gas 基線（相對法 100%）
+
+// ---- 防結露警示（僅警示，不影響控溫）----
+// 出風口 ≤ 露點+1°C 進入警示，> 露點+2°C 解除（遲滯）；BME 離線或資料超過 30 秒未更新 → 不判斷
+const float COND_ON_MARGIN = 1.0f;
+const float COND_OFF_MARGIN = 2.0f;
+const unsigned long COND_STALE_MS = 30000;
+bool condRisk = false;
 
 int fanSpeed = 0;
 float targetTemp = 28.0;   // 單一目標溫度
@@ -247,14 +259,14 @@ void controlTemp() {
   }
 }
 
-// ---- BME688 初始化 / 非阻塞讀取 ----
+// ---- BME680 初始化 / 非阻塞讀取 ----
 void bmeInit(bool quiet = false) {
   uint8_t addr = 0;
   if (bme.begin(0x76)) addr = 0x76;
   else if (bme.begin(0x77)) addr = 0x77;
   if (addr == 0) {
     bmeOk = false;
-    if (!quiet) Serial.println("[BME] 未偵測到 BME688（0x76/0x77 無回應）——環境欄位顯示 --");
+    if (!quiet) Serial.println("[BME] 未偵測到 BME680（0x76/0x77 無回應）——環境欄位顯示 --");
     return;
   }
   bme.setTemperatureOversampling(BME680_OS_8X);
@@ -262,11 +274,13 @@ void bmeInit(bool quiet = false) {
   bme.setPressureOversampling(BME680_OS_4X);
   bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
   bme.setGasHeater(320, 150);   // 320°C / 150ms
+  bmeHeaterOn = true;
+  bmeCycle = 0;                 // 第一筆即 Gas 筆
   bmeOk = true;
   bmeMeasuring = false;
   bmeFailCount = 0;
-  Serial.printf("[BME] 就緒 @0x%02X（溫濕壓 + Gas，加熱器 320C/150ms，週期 %lus）\n",
-                addr, BME_INTERVAL_MS / 1000);
+  Serial.printf("[BME] 就緒 @0x%02X（溫濕壓每 %lums；Gas 每 %d 筆，加熱器 320C/150ms）\n",
+                addr, BME_INTERVAL_MS, BME_GAS_EVERY);
 }
 
 // 非阻塞狀態機（與 DS18B20 同思路）：beginReading() 記下完成時刻，時間到才 endReading() 取值，不阻塞 loop
@@ -279,6 +293,12 @@ void bmeTick() {
   if (!bmeMeasuring) {
     if (millis() - lastBme < BME_INTERVAL_MS) return;
     lastBme = millis();
+    // 只有 Gas 筆開加熱器；其餘筆關掉，溫濕壓不受加熱器自熱影響
+    bmeGasCycle = (bmeCycle % BME_GAS_EVERY == 0);
+    if (bmeGasCycle != bmeHeaterOn) {
+      if (bme.setGasHeater(bmeGasCycle ? 320 : 0, bmeGasCycle ? 150 : 0)) bmeHeaterOn = bmeGasCycle;
+      else bmeGasCycle = bmeHeaterOn;   // 切換失敗：照實際加熱器狀態處理本筆
+    }
     unsigned long due = bme.beginReading();
     if (due == 0) {
       if (++bmeFailCount >= 3) { bmeOk = false; Serial.println("[BME] 連續失敗 → 標記離線，持續重試"); }
@@ -287,16 +307,17 @@ void bmeTick() {
     }
     bmeDue = due;
     bmeMeasuring = true;
+    bmeCycle++;
     return;
   }
   if ((long)(millis() - bmeDue) < 0) return;   // 量測還沒完成，下一輪 loop 再看
   bmeMeasuring = false;
   if (!bme.endReading()) { Serial.println("[BME] 讀取失敗（沿用上一筆值）"); return; }
   bmeFailCount = 0;
+  lastBmeOk = millis();
   bmeT = bme.temperature;
   bmeH = bme.humidity;
   bmeP = bme.pressure / 100.0f;                                              // Pa → hPa
-  bmeGas = (bme.gas_resistance > 0) ? bme.gas_resistance / 1000.0f : NAN;    // Ω → kΩ（0 = 氣體未穩定）
   // 露點：Magnus 公式
   if (bmeH > 0 && bmeH <= 100) {
     float lg = logf(bmeH / 100.0f) + (17.62f * bmeT) / (243.12f + bmeT);
@@ -304,6 +325,8 @@ void bmeTick() {
   } else {
     bmeDP = NAN;
   }
+  if (!bmeGasCycle) return;   // 非 Gas 筆：只更新溫濕壓/露點，Gas 沿用上一筆，也不印序列埠（避免每秒洗版）
+  bmeGas = (bme.gas_resistance > 0) ? bme.gas_resistance / 1000.0f : NAN;    // Ω → kΩ（0 = 氣體未穩定）
   // Gas 相對基線法：慢速 EMA 當 100%，只報相對變化（無絕對 ppm）
   if (isnan(bmeGas)) {
     bmeGasRel = NAN;
@@ -315,6 +338,24 @@ void bmeTick() {
   Serial.printf("[BME] %.1fC %.1f%% %.1fhPa Gas:%.1fkΩ 相對:%.0f%% 露點:%.1fC%s\n",
                 bmeT, bmeH, bmeP, bmeGas, bmeGasRel, bmeDP,
                 (millis() < BME_BURNIN_MS) ? "（Gas 燒機期中）" : "");
+}
+
+// 防結露遲滯判斷（純函式）：任一值 NAN → 不警示
+bool condRiskNext(bool prev, float vent, float dp) {
+  if (isnan(vent) || isnan(dp)) return false;
+  if (vent <= dp + COND_ON_MARGIN) return true;
+  if (vent > dp + COND_OFF_MARGIN) return false;
+  return prev;
+}
+
+void updateCondRisk() {
+  bool fresh = bmeOk && lastBmeOk != 0 && millis() - lastBmeOk < COND_STALE_MS;
+  bool next = fresh ? condRiskNext(condRisk, ventT, bmeDP) : false;
+  if (next != condRisk) {
+    Serial.printf("[COND] %s（出風口 %.2fC，露點 %.1fC）\n",
+                  next ? "結露風險：出風口接近露點" : "結露風險解除", ventT, bmeDP);
+    condRisk = next;
+  }
 }
 
 // 浮點 → JSON：NAN 輸出 null
@@ -387,7 +428,7 @@ void handleData() {
     if (isnan(tArr[i])) strcpy(tBuf[i], "null");
     else snprintf(tBuf[i], 8, "%.2f", tArr[i]);
   }
-  // BME688 欄位（未接 = null，前端顯示 --）
+  // BME680 欄位（未接 = null，前端顯示 --）
   char bT[8], bH[8], bP[10], bG[10], bR[8], bDP[8];
   fmtOrNull(bT, sizeof(bT), bmeT, 2);
   fmtOrNull(bH, sizeof(bH), bmeH, 1);
@@ -397,10 +438,10 @@ void handleData() {
   fmtOrNull(bDP, sizeof(bDP), bmeDP, 1);
   char buf[1024];
   snprintf(buf, sizeof(buf),
-    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"fanManual\":%s,\"strip\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s}",
+    "{\"ok\":true,\"nest\":%s,\"room\":%s,\"vent\":%s,\"sensorCount\":%d,\"fanSpeed\":%d,\"cooling\":%s,\"heating\":%s,\"systemOn\":%s,\"manualMode\":%s,\"camEnabled\":%s,\"camIP\":\"%s\",\"targetTemp\":%.1f,\"hysteresis\":%.2f,\"safeMin\":%.1f,\"safeMax\":%.1f,\"ventMax\":%.1f,\"wifiMode\":%d,\"fanManual\":%s,\"strip\":%d,\"bmeOk\":%s,\"bmeT\":%s,\"bmeH\":%s,\"bmeP\":%s,\"bmeGas\":%s,\"bmeGasRel\":%s,\"bmeDP\":%s,\"condRisk\":%s}",
     tBuf[0], tBuf[1], tBuf[2], n,
     fanSpeed, cooling ? "true" : "false", heating ? "true" : "false", systemOn ? "true" : "false", manualMode ? "true" : "false", camEnabled ? "true" : "false", camIP.toString().c_str(), targetTemp, hysteresis, safeMin, safeMax, ventMax, wifiMode, fanManual ? "true" : "false", stripPct,
-    bmeOk ? "true" : "false", bT, bH, bP, bG, bR, bDP);
+    bmeOk ? "true" : "false", bT, bH, bP, bG, bR, bDP, condRisk ? "true" : "false");
   server.send(200, "application/json", buf);
 }
 
@@ -677,7 +718,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei
       </div>
     </div>
     <div class="sec" id="bmeSec">
-      <h2>箱內環境 BME688 <span id="bmeState" style="float:right;font-size:.6rem;color:var(--t3);text-transform:none">--</span></h2>
+      <h2>箱內環境 BME680 <span id="bmeState" style="float:right;font-size:.6rem;color:var(--t3);text-transform:none">--</span></h2>
       <div class="info">
         溫度 <b id="bT">--</b>°C　濕度 <b id="bH">--</b>%　露點 <b id="bDP">--</b>°C<br>
         氣壓 <b id="bP">--</b> hPa　氣體 <b id="bG">--</b> kΩ　相對基線 <b id="bR">--</b>%
@@ -851,6 +892,7 @@ async function doPoll(){
     var bn=document.getElementById('banner'),miss=[];if(d.nest==null)miss.push('巢穴');if(d.room==null)miss.push('活動區');if(d.vent==null)miss.push('出風口');
     if(d.manualMode){bn.className='banner show err';bn.textContent='⚠ 手動模式：自動溫控與安全保護（斷線急停、出風口上限）都不生效。用完請切回自動模式。';}
     else if(miss.length){bn.className='banner show err';bn.textContent='⚠ 感測器斷線：'+miss.join('、')+'。系統開啟時連續 3 次讀不到會緊急停止。';}
+    else if(d.condRisk){bn.className='banner show warn';bn.textContent='💧 結露風險：出風口 '+d.vent.toFixed(1)+'°C 已接近露點 '+d.bmeDP.toFixed(1)+'°C（≤ 露點+1°C）。僅警示，控溫不變；請留意冷端與箱壁凝水。';}
     else if(d.systemOn&&d.fanManual){bn.className='banner show warn';bn.textContent='風扇目前是手動轉速，TEC 仍為自動。停止再開啟系統可恢復自動風扇。';}
     else bn.className='banner';
     document.getElementById('sysBtn').className=d.systemOn?'btn on':'btn off';
@@ -1006,6 +1048,7 @@ void updateOLED() {
     u8g2.setCursor(50, 34);
     if (isnan(ventT)) u8g2.print("---"); else u8g2.print(ventT, 2);
     u8g2.print("C");
+    if (condRisk) { u8g2.setCursor(104, 34); u8g2.print("DEW"); }   // 結露風險警示
 
     // 分隔線
     u8g2.drawHLine(0, 38, 128);
@@ -1110,6 +1153,8 @@ void setup() {
   // #31 斷電恢復：從 EEPROM 讀取上次狀態
   EEPROM.begin(256);
   loadState();
+  // 斷電前在運行 → 重新拉高 TEC_EN（否則 UI 顯示運行但 H 橋未致能）。急停會存 systemOn=false，故不會自動重啟急停狀態
+  if (systemOn) { Serial.println("[SYS] 斷電恢復：上次為運行狀態，自動啟動"); startAll(); }
 
   // 明確設定 I2C 腳位並掃描匯流排
   Wire.begin(21, 22);  // SDA=21, SCL=22
@@ -1124,7 +1169,7 @@ void setup() {
   }
   Serial.printf(" (%d device(s))\n", i2cCount);
 
-  bmeInit();   // BME688（與 OLED 同一條 I2C）
+  bmeInit();   // BME680（與 OLED 同一條 I2C）
 
   u8g2.begin();
   u8g2.setContrast(128);
@@ -1260,7 +1305,8 @@ void loop() {
     doScan();
   }
   if (millis() - lastRead >= 2000) { lastRead = millis(); readSensor(); }
-  bmeTick();   // BME688 非阻塞讀取（每 10 秒一筆，不阻塞 loop）
+  bmeTick();   // BME680 非阻塞讀取（溫濕壓 1 Hz、Gas 每 10 秒，不阻塞 loop）
+  updateCondRisk();   // 防結露警示（僅警示）
   // 定時檢查 OLED：拔掉再插回去也能自動恢復
   if (millis() - lastOledCheck >= 5000) {
     lastOledCheck = millis();

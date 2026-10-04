@@ -54,6 +54,15 @@ static NanGuardResult nanGuard(bool anyNan, int priorCount) {
     return { c >= 3, c };                                   // 累计 3 次才断电
 }
 
+// ============ [MIRROR] 防结露迟滞 condRiskNext —— 镜像 main.cpp:344-349 ============
+static const float COND_ON_MARGIN = 1.0f, COND_OFF_MARGIN = 2.0f;
+static bool condRiskNext(bool prev, float vent, float dp) {
+    if (std::isnan(vent) || std::isnan(dp)) return false;
+    if (vent <= dp + COND_ON_MARGIN) return true;
+    if (vent > dp + COND_OFF_MARGIN) return false;
+    return prev;
+}
+
 // =========================== 测试 ===========================
 
 void setUp(void) {
@@ -158,6 +167,24 @@ void test_eeprom_layout_constants(void) {
     TEST_ASSERT_TRUE(133 <= 256);    // 总占用未超 EEPROM.begin(256)
 }
 
+// ---- condRiskNext（露点 15°C → 进入 ≤16、解除 >17）----
+void test_cond_enter_at_dp_plus_1(void) {
+    TEST_ASSERT_TRUE(condRiskNext(false, 16.0f, 15.0f));
+    TEST_ASSERT_FALSE(condRiskNext(false, 16.1f, 15.0f));
+}
+void test_cond_hysteresis_holds(void) {
+    TEST_ASSERT_TRUE(condRiskNext(true, 16.5f, 15.0f));    // 已警示，16–17 之间保持
+    TEST_ASSERT_TRUE(condRiskNext(true, 17.0f, 15.0f));
+    TEST_ASSERT_FALSE(condRiskNext(false, 16.5f, 15.0f));  // 未警示，16–17 之间不进入
+}
+void test_cond_exit_above_dp_plus_2(void) {
+    TEST_ASSERT_FALSE(condRiskNext(true, 17.1f, 15.0f));
+}
+void test_cond_nan_clears(void) {
+    TEST_ASSERT_FALSE(condRiskNext(true, NAN, 15.0f));     // 出风口断线
+    TEST_ASSERT_FALSE(condRiskNext(true, 10.0f, NAN));     // BME 无露点
+}
+
 int main(int argc, char** argv) {
     // ---- test_control_policy.cpp / test_eeprom_config.cpp 的用例（PIO native 单程序链接） ----
     void test_noop_when_system_off(void);
@@ -220,5 +247,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_clamp_ventMax_boundaries);
     RUN_TEST(test_clamp_hysteresis_boundaries);
     RUN_TEST(test_clamp_offset_signed);
+    RUN_TEST(test_cond_enter_at_dp_plus_1);
+    RUN_TEST(test_cond_hysteresis_holds);
+    RUN_TEST(test_cond_exit_above_dp_plus_2);
+    RUN_TEST(test_cond_nan_clears);
     return UNITY_END();
 }
