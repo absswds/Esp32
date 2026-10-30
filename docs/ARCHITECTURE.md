@@ -51,7 +51,7 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**关键点：** 两台 ESP32 **不共享任何硬件资源**。相机 IR/LED 在浏览器中由前端**直接发请求到相机 81 端口**（`toggleIR()`/`toggleLED()`）。前端只在 `camIP` 为空时才退回主 ESP 的 `/light` 代理（见 `src/main.cpp:1132-1161`），但 `/data` 恒返回 `camIP`（未解析到时为默认 `192.168.4.2`），所以**实际上前端永远直连、代理路径走不到**；且该代理连的是相机 **80 口**，而 `/light` 注册在 81 口，本身也是坏的（见 CLAUDE.md 相机章节 / LIMITATIONS #34–36 所记代码问题）。串流与控制分端口，是为了避免串流占住 80 口导致灯光无反应。
+**关键点：** 两台 ESP32 **不共享任何硬件资源**。相机 IR/LED 在浏览器中由前端**直接发请求到相机 81 端口**（`toggleIR()`/`toggleLED()`）。前端只在 `camIP` 为空时才退回主 ESP 的 `/light` 代理（`setup()` 里 `server.on("/light", …)`），但 `/data` 恒返回 `camIP`（未解析到时为默认 `192.168.4.2`），所以**实际上前端永远直连、代理路径走不到**；且该代理连的是相机 **80 口**，而 `/light` 注册在 81 口，本身也是坏的（锁版未修，见 §3.4）。串流与控制分端口，是为了避免串流占住 80 口导致灯光无反应。
 
 ---
 
@@ -60,7 +60,7 @@
 | 维度 | 主 ESP（TEC 溫控） | 相机（行为观测） |
 |------|---------------------|-----------------|
 | 板型 | `board = esp32dev`（实物为 FireBeetle 2 ESP32-E；`platformio.ini` 未指定专用 variant） | DFRobot DFR1154 ESP32-S3 (`dfrobot_dfr1154`)，16MB Flash + 8MB OPI PSRAM |
-| 主源文件 | `src/main.cpp`（1240 行） | `camera/src/main.cpp`（275 行） |
+| 主源文件 | `src/main.cpp`（约 1340 行） | `camera/src/main.cpp`（275 行） |
 | 框架 | Arduino + Arduino-ESP32 core | Arduino + Arduino-ESP32 core + esp32-camera |
 | WiFi 角色 | 默认 AP（`ESP32-TEMP` / 192.168.4.1）；可切 STA+AP 备援 | STA（连 `OPhone 12` 手机热点，失败回退 `ESP32-TEMP`） |
 | HTTP | 单 `WebServer` (port 80)，`loop()` 内 `handleClient()` 同步分派 | 双 `httpd` (port 80 串流 / port 81 控制)，每实例 1 个 server task |
@@ -112,13 +112,14 @@
 
 ### 3.4 网络层（`main.cpp:364-555, 1126-1181`）
 
-- `WebServer server(80)` — 5 个路由 + 2 个 inline lambda 路由（共 7 个）：
+- `WebServer server(80)` — 5 个 handler 路由 + 3 个 inline lambda 路由（共 8 个）：
   - `GET /` → `handleRoot()` 返回 `PROGMEM` 内嵌的 SPA HTML（`main.cpp:557-935`，约 380 行 inline HTML+CSS+JS）。
   - `GET /data` → `handleData()` JSON 状态快照（温度为滤波值；含 `bmeOk/bmeT/bmeH/bmeP/bmeGas/bmeGasRel/bmeDP`，BME 不在线时为 `null`）。
   - `POST /control` → `handleControl()` 参数写入 + `scheduleStateSave()` / `saveState()`，再 `controlTemp()` 即时生效。
   - `GET /test` → `handleTest()` 手动 PWM 测试，置 `tecManual/fanManual` 标志。
   - `GET /diag` → `handleDiag()` 诊断 JSON。
   - `GET /light`（inline） → 设计上是相机不可直连时的代理；乐观更新本地 `lightIR/lightLED` 缓存，再尽最大努力同步到相机 `camIP:80`。**已知缺陷**：相机的 `/light` 在 81 口，连 80 口会 404；且前端总拿得到 `camIP`，实际不会走这条路径。
+  - `GET /strip`（inline，2026-09-26） → `?b=0-100` 设 LED 灯带亮度（GPIO13，LEDC ch4，5 kHz），回 `{"strip":N}`；不存 EEPROM。
   - `GET /camenable`（inline） → 切换 `camEnabled` 标志并回 JSON。
 
 ### 3.5 显示层（`main.cpp:941-983, 1212-1224`）
@@ -217,7 +218,7 @@ VGA 640×480 / JPEG quality 16 / `CAMERA_GRAB_LATEST` / `fb_count=2` / `fb_locat
 
 ### 5.4 显示流
 
-主回路中 OLED 每 2 秒读全局温度 + 状态绘制；浏览器侧每 1 秒（串流时 5 秒）轮询 `/data` 推入 `H`（600 滑动窗口）和 `allData`（10000 上限）数组，Canvas 重绘趋势图。注意：温度值本身约每 4 秒才更新一次，CSV 中相邻行多为重复值；网页"更新頻率"滑条会在下一次轮询被 `ms=camEnabled?5000:1000` 覆盖，实际无效（前端已知缺陷）。
+主回路中 OLED 每 2 秒读全局温度 + 状态绘制；浏览器侧每 1 秒（串流时 5 秒）轮询 `/data` 推入 `H`（600 滑动窗口）和 `allData`（10000 上限）数组，Canvas 重绘趋势图。注意：温度值本身约每 4 秒才更新一次，CSV 中相邻行多为重复值。网页"更新頻率"滑条可调 1–10 秒（相机开启时至少 5 秒）；09-26 之前它会被轮询覆盖，已修。
 
 ---
 
@@ -383,7 +384,6 @@ EEPROM 详细地址映射见 [CONFIG_GUIDE.md]。
 | `setFan` / `setTec` / `setTecPwm` | `main.cpp:109-168` |
 | `stopAll`/`startAll`/`emergencyStop` | `main.cpp:125-152` |
 | `controlTemp`（核心决策） | `main.cpp:170-238` |
-| `bmeInit` / `bmeTick` | `main.cpp:241-308` |
 | `readSensor`（非阻塞状态机） | `main.cpp:316-362` |
 | `handleData` / `handleControl` / `handleDiag` / `handleTest` | `main.cpp:364-555` |
 | HTTP 路由注册 | `main.cpp:1126-1181` |

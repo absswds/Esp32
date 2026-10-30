@@ -4,7 +4,7 @@
 >
 > 如果只想知道"我现在改这个值会发生什么、改之前要注意什么"，请直接跳到 §6 "调参导引"。
 >
-> **状态（2026-09-10 收尾锁版）：** 引脚/阈值/EEPROM 布局已按现行 `src/main.cpp`（1240 行，含 BME688）核对；代码已知问题集中在 [../LIMITATIONS.md](../LIMITATIONS.md) #34~#37，锁版冻结不再改代码。
+> **状态（2026-09-10 收尾锁版）：** 引脚/阈值/EEPROM 布局已核对（2026-09-26 复核时 `src/main.cpp` 为 1240 行，含 BME688）；代码已知问题集中在 [../LIMITATIONS.md](../LIMITATIONS.md) #34~#37，锁版冻结不再改代码。
 >
 > **2026-10-04 解冻增补：** 传感器换装 BME680（1 Hz 温湿压 + 每 10 次量一次 Gas）、新增防结露警示 `condRisk`（仅警示）、断电自动恢复（LIMITATIONS #31）；`src/main.cpp` 现约 1340 行。新常量见 §3.4。
 
@@ -112,9 +112,9 @@
 
 ### 2.3 文档与代码不符处（风扇）
 
-> ⚠️ README "溫控邏輯詳解" 写"製冷時風扇應以 PWM 50–52% 運行（實測最優）"，但 **`controlTemp()` 制冷分支实际写 `setFan(255)`（全速）**（`main.cpp:215-221`）。
+> ⚠️ 实测冷端风扇降速比全速好（08-01：100% 时出风口 18.6°C，手动 52% 时 14.87°C），但 **`controlTemp()` 制冷分支实际写 `setFan(255)`（全速）**。
 
-实测发现 52% 才是最优，但**这部分代码未同步**（收尾锁版决定不修）。详见 [../LIMITATIONS.md](../LIMITATIONS.md) #34。若要同步：
+注意数据只能说明"降速优于全速"，没做过档位扫描，52% 不一定是最优点。**这部分代码未同步**（收尾锁版决定不修）。详见 [../LIMITATIONS.md](../LIMITATIONS.md) #34。若要同步：
 - 把制冷分支 `setFan(255)` 改为 `setFan(round(255*0.52))`（≈133）或引入常量 `COOL_FAN_PCT=52`。
 - 加热分支 `setFan(255)` 维持不变（全速合理）。
 - 演示对策：网页手动把风扇设到 52%（`fanManual`）。
@@ -135,7 +135,7 @@
 
 > ⚠️ **`ventMax` 范围在 `handleControl()` 中是 `40~80`**（README 旧文本曾写 `30~80`，现已同步为 40~80）。在 `loadState()` 中 clamp 也是 `40.0~80.0`。请以**40~80 为准**。
 >
-> ⚠️ `safeMin` API 写 `0~20`、`safeMax` 写 `20~50`——两者**可能交叉**（例如 safeMin=18, safeMax=10），代码**未校验** safeMin < safeMax，会进入不安全区域。详见 [../LIMITATIONS.md](../LIMITATIONS.md) #36。
+> ⚠️ `safeMin` 限在 `0~20`、`safeMax` 限在 `20~50`，两个范围不相交，所以经 `/control` **设不反**。真正的风险是代码没校验 `targetTemp` 是否落在 `safeMin~safeMax` 之间：目标在区间外时会一直走"巢穴极端温度"分支，TEC 永远关着（另有 EEPROM 损坏读出畸形值的情况，见 #35）。详见 [../LIMITATIONS.md](../LIMITATIONS.md) #36。
 
 ### 3.2 校准偏移
 
@@ -145,7 +145,7 @@
 | `roomOffset` | 0 | `-5.0 ~ 5.0` | `82`, 287-291 | 活动区 |
 | `ventOffset` | 0 | `-5.0 ~ 5.0` | `82`, 293-295 | 出风口 |
 
-偏移在 `readSensor()` 中叠加到 raw 读值，参见 `main.cpp:345`。**对控制用滤波值和显示用原始值都生效**（同一 `raw[i] += offs` 后分别走滤波与 readTemps）。
+偏移在 `readSensor()` 中叠加到 raw 读值，参见 `main.cpp:345`。**对滤波值和 `readTemps[]` 原始值都生效**（同一 `raw[i] += offs` 后分别走滤波与 readTemps）。控制、`/data`、OLED、CSV 用的都是滤波值，`readTemps[]` 目前没有接口输出。
 
 ### 3.3 阈值生效优先级
 
@@ -160,7 +160,7 @@
 **调参注意**：
 - 想要更精细控制：缩小 `hysteresis`（如 0.1）。代价是死区边缘频繁切换。
 - 想要更平缓：加大 `hysteresis`（如 1.0）。代价是稳态偏差更大。
-- 切 PI 控制需在 `controlTemp()` 新增 `coolIntegral/heatIntegral/KI/maxRate` 等变量（本地开发笔记有逐步步骤，未随库发布）。
+- 切 PI 控制见 §3.5。
 
 ### 3.4 BME680 / 防结露常量（2026-10-04 新增）
 
@@ -177,6 +177,66 @@
 `condRisk` **仅警示**（`/data` 字段、网页横幅、OLED `DEW`），不进入 `controlTemp()`，不写 EEPROM。出风口气温只是冷端表面的代理量，警示可能偏晚。
 
 ---
+
+### 3.5 切回 PI 控制（正式蛰眠实验前）
+
+07-23 从 PI 改成 bang-bang，是因为地面测试温差太小（室温 29–30°C、目标 28°C），PI 怎么调都不够积极。正式实验是 24 → 15°C，温差大，冷量也够了（铜片 + 冷端风扇降速后出风口 14.87°C），可以换回 PI 让温度变化平缓一些。
+
+下面是步骤草稿，**没有在现行代码上编译验证过**，改完先 `pio run -e esp32dev`，上机前先空箱跑一遍。
+
+1. 在 `EMA_ALPHA` 附近加变量：
+
+```cpp
+float coolIntegral = 0, heatIntegral = 0;
+const float KI = 0.05f;           // 07-23 调到的值
+const float KI_MAX = 0.5f;
+const float maxHeatRate = 1.0f;   // °C/min；只有想模拟自然复温才需要，论文流程是人工快速复温
+const float maxCoolRate = 0.5f;   // °C/min
+float prevNestT = NAN;
+unsigned long lastControlTime = 0;
+```
+
+2. 把 `controlTemp()` 里 `throttle` 计算之后的 `// === 製冷/加熱/維持 ===` 整段换成：
+
+```cpp
+float dtMin = (millis() - lastControlTime) / 60000.0f;
+lastControlTime = millis();
+float coolDiff = nestT - (targetTemp + hysteresis);
+float heatDiff = (targetTemp - hysteresis) - nestT;
+
+if (coolDiff > 0) {
+  heatIntegral = 0;
+  if (coolDiff < 2.0) coolIntegral += coolDiff * KI;   // 接近目标才积分，防 windup
+  coolIntegral = constrain(coolIntegral, -KI_MAX, KI_MAX);
+  float power = constrain(coolDiff / 5.0 + coolIntegral, 0.15, 1.0);
+  if (coolDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {   // 温差 >3°C 才限速
+    float rate = (nestT - prevNestT) / dtMin;
+    if (rate < 0 && -rate > maxCoolRate) power *= maxCoolRate / (-rate);
+  }
+  setTecPwm(power * throttle, true);
+  if (!fanManual) setFan(100 + (int)(155 * power));    // 冷端风扇转速另见 §2.3 / #34
+} else if (heatDiff > 0) {
+  coolIntegral = 0;
+  if (heatDiff < 2.0) heatIntegral += heatDiff * KI;
+  heatIntegral = constrain(heatIntegral, -KI_MAX, KI_MAX);
+  float power = constrain(heatDiff / 5.0 + heatIntegral, 0.15, 1.0);
+  if (heatDiff > 3.0 && !isnan(prevNestT) && dtMin > 0) {
+    float rate = (nestT - prevNestT) / dtMin;
+    if (rate > maxHeatRate) power *= maxHeatRate / rate;
+  }
+  setTecPwm(power * throttle, false);
+  if (!fanManual) setFan(80 + (int)(175 * power));
+} else {
+  coolIntegral *= 0.95;
+  heatIntegral *= 0.95;
+  // ……保留原来的 setTecPwm(0) 和风扇 after-run 逻辑
+}
+prevNestT = nestT;
+```
+
+3. `throttle` 乘在 PI 输出上，保留出风口接近 `ventMax` 时的降功率；`ventT >= ventMax` 急停不受影响。
+4. `controlTemp()` 除了 `readSensor()` 还会被每次 `/control` 请求调用，两次调用间隔可能很短，速率估计会抖。介意的话把 `prevNestT` / `lastControlTime` 的更新挪到 `readSensor()` 那条路径上。
+5. 要回到 bang-bang：删掉这些变量，把这一段恢复原样。
 
 ## 4. EEPROM 地址映射
 
@@ -199,7 +259,7 @@
 | 68 | 65 bytes | `wifiPass[65]` | `put(68,...)` | `/control` 写 pass |
 | **68+65=133** | **已用 133 bytes**，余 123 字节空白 | — | — | — |
 
-> 栈空间 `256` 足够覆盖 133 字节使用。新增字段请从 133 起排，**注意 EEPROM 物理扇区寿命**（约 10 万次写满额度的擦写）。`scheduleStateSave()` 750ms 的去抖正是为降低碎片化写入。
+> `EEPROM.begin(256)` 映射的 256 字节足够覆盖 133 字节使用。新增字段请从 133 起排，**注意 EEPROM 物理扇区寿命**（约 10 万次写满额度的擦写）。`scheduleStateSave()` 750ms 的去抖正是为降低碎片化写入。
 
 ### 4.1 loadState 的安全逻辑
 
@@ -273,7 +333,7 @@ STA 默认凭据：`OPhone 12` / `qwer1234`，当 EEPROM 中 SSID 为空或 0xFF
 
 ### 6.5 我要改风扇最速制冷
 
-实测冷端风扇 50-52% 反而出风口最低；**默认代码制冷分支写 255 是全速**。如要套实测结论，要么把 `setFan(255)` 改为 `setFan(133)`（≈52%），要么新增常量 `COOL_FAN_PCT`。
+实测冷端风扇降速比全速好（52% 那次出风口 14.87°C，未做档位扫描）；**默认代码制冷分支写 255 是全速**。如要套实测结论，要么把 `setFan(255)` 改为 `setFan(133)`（≈52%），要么新增常量 `COOL_FAN_PCT`。
 
 ### 6.6 我要加新参数
 
