@@ -12,3 +12,4 @@ test/README
 pdf_output.txt
 CLAUDE.md
 .claude
+.playwright-mcp/
