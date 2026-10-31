@@ -40,14 +40,14 @@ pio test -e native --verbose
 
 ### ✅ 已可直接跑過（test_pure_logic.cpp）
 
-| 算法 | 鏡像的源碼函數 | 用例 |
+| 算法 | 鏡像位置 | 用例 |
 |------|---------|------|
-| `sameAddr` ROM 字節比較 | `sameAddr()` | 3 個用例（相等/末位異/首字節異） |
-| EMA 濾波（α=0.5） | `readSensor()` | 3 個用例（首幀初始化 / α=0.5 / 單幀尖刺衰減） |
-| DS18B20 範圍合法化 | `readSensor()` | 6 個用例（斷線/超範圍/邊界/NaN 透傳） |
-| NaN 計數去抖 | `controlTemp()` 保護 0、`loop()` 守衛 | 3 個用例（恢復路徑 / 3 次觸發 / 0 glitch） |
-| EEPROM 地址佈局契約 | `saveState()` / `loadState()` | 1 個用例（確保佈局常量未被改壞） |
-| 防結露警示遲滯 `condRiskNext` | `condRiskNext()`（2026-10-04） | 4 個用例（`test_cond_enter_at_dp_plus_1` 露點+1 進入 / `test_cond_hysteresis_holds` 1–2°C 間保持 / `test_cond_exit_above_dp_plus_2` 露點+2 以上退出 / `test_cond_nan_clears` NaN 清除） |
+| `sameAddr` ROM 字節比較 | `main.cpp:987-990` | 3 個用例（相等/末位異/首字節異） |
+| EMA 濾波（α=0.5） | `main.cpp:346-351` | 3 個用例（首幀初始化 / α=0.5 / 單幀尖刺衰減） |
+| DS18B20 範圍合法化 | `main.cpp:339-344` | 6 個用例（斷線/超範圍/邊界/NaN 透傳） |
+| NaN 計數去抖 | `main.cpp:177-190`, `:1190` | 3 個用例（恢復路徑 / 3 次觸發 / 0 glitch） |
+| EEPROM 地址佈局契約 | `main.cpp:474-491` | 1 個用例（確保佈局常量未被改壞） |
+| 防結露警示遲滯 `condRiskNext` | `main.cpp:344-349`（2026-10-04） | 4 個用例（`test_cond_enter_at_dp_plus_1` 露點+1 進入 / `test_cond_hysteresis_holds` 1–2°C 間保持 / `test_cond_exit_above_dp_plus_2` 露點+2 以上退出 / `test_cond_nan_clears` NaN 清除） |
 
 ### 🟡 骨架就緒但需策略調整（test_control_policy.cpp, test_eeprom_config.cpp）
 

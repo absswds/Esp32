@@ -29,7 +29,7 @@
 
 ### 1.1 主 ESP（FireBeetle 2 ESP32-E，board `esp32dev`）
 
-定義在 `src/main.cpp` 開頭的 `#define`（`FAN_PIN`、`TEC_EN`、`DS18B20_PIN`、`LED_PIN` 等）。
+定義見 `src/main.cpp:14-24`。
 
 | 信號 | 宏 | GPIO | FireBeetle 板標 | 類型 | 用途 |
 |------|-----|------|------------------|------|------|
@@ -64,7 +64,7 @@
 
 ### 1.3 相機（DFR1154 ESP32-S3）
 
-見 `camera/src/main.cpp` 開頭的 `PIN_IR` / `PIN_LED`，以及 `setup()` 裡的 `camera_config_t`。
+見 `camera/src/main.cpp:17-18, 202-218`。
 
 | 信號 | 引腳 | 用途 |
 |------|------|------|
@@ -78,7 +78,7 @@
 
 ## 2. PWM / LEDC 參數
 
-定義在 `src/main.cpp` 開頭（`PWM_FREQ`、`PWM_RES`、`TEC_PWM_RES`、`FAN_CH` 等）。
+定義見 `src/main.cpp:14-23`。
 
 | 通道 | 宏 | 引腳 | 頻率 | 分辨率 | 範圍 | 寫函數 |
 |------|-----|------|------|--------|------|--------|
@@ -98,17 +98,17 @@
 
 | 項 | 宏 / 全局 | 值 | 位置 | 說明 |
 |----|----------|----|----|----|
-| EMA 濾波係數 | `EMA_ALPHA` | `0.5f` | 全局 `#define` | 新讀值佔 50%，舊濾波值佔 50%；越大越逼真但越噪 |
-| 風扇延遲關閉時間 | `FAN_AFTERRUN_MS` | `10000` ms | 全局常量 | TEC 關後保持 78% 風扇 10 秒 |
-| 風扇延遲檔速 | `FAN_AFTERRUN_SPEED` | `200` PWM | 全局常量 | ≈78%（200/255） |
-| 狀態保存去抖 | `STATE_SAVE_DEBOUNCE_MS` | `750` ms | 全局常量 | `/control` 寫參數後 0.75s 內不再寫 EEPROM |
-| 看門狗超時 | `esp_task_wdt_init(7, true)` | **7 秒** | `setup()` | ⚠️ 舊註釋寫 3 秒，**實際是 7 秒**，以代碼為準 |
-| OneWire 轉換等待 | `millis()-convStart >= 750` | 750 ms | `readSensor()` | DS18B20 12-bit 轉換時間硬約束 |
-| 感測週期 | `millis()-lastRead >= 2000` | 2000 ms | `loop()` | loop 內觸發；疊加 750ms 轉換等待與調度開銷，**實測約 4s**（見 ARCHITECTURE） |
-| 重掃間隔 | `millis()-lastScan >= 10000` | 10 s | `loop()` | 任一感測器缺失時才掃 |
-| OLED 檢查 | `millis()-lastOledCheck >= 5000` | 5 s | `loop()` | 熱插拔檢查 |
-| OLED 刷新 | `millis()-lastOled >= 2000` | 2 s | `loop()` | 畫面更新 |
-| mDNS 重查 | `resolveInterval` | 5 s（未確認）/60 s（確認） | `loop()` | 相機 IP 刷新 |
+| EMA 濾波係數 | `EMA_ALPHA` | `0.5f` | `main.cpp:89` | 新讀值佔 50%，舊濾波值佔 50%；越大越逼真但越噪 |
+| 風扇延遲關閉時間 | `FAN_AFTERRUN_MS` | `10000` ms | `main.cpp:94` | TEC 關後保持 78% 風扇 10 秒 |
+| 風扇延遲檔速 | `FAN_AFTERRUN_SPEED` | `200` PWM | `main.cpp:95` | ≈78%（200/255） |
+| 狀態保存去抖 | `STATE_SAVE_DEBOUNCE_MS` | `750` ms | `main.cpp:81` | `/control` 寫參數後 0.75s 內不再寫 EEPROM |
+| 看門狗超時 | `esp_task_wdt_init(7, true)` | **7 秒** | `main.cpp:1050` | ⚠️ 舊註釋寫 3 秒，**實際是 7 秒**，以代碼為準 |
+| OneWire 轉換等待 | `millis()-convStart >= 750` | 750 ms | `main.cpp:324` | DS18B20 12-bit 轉換時間硬約束 |
+| 感測週期 | `millis()-lastRead >= 2000` | 2000 ms | `main.cpp:1209` | loop 內觸發；疊加 750ms 轉換等待與調度開銷，**實測約 4s**（見 ARCHITECTURE） |
+| 重掃間隔 | `millis()-lastScan >= 10000` | 10 s | `main.cpp:1205` | 任一感測器缺失時才掃 |
+| OLED 檢查 | `millis()-lastOledCheck >= 5000` | 5 s | `main.cpp:1212` | 熱插拔檢查 |
+| OLED 刷新 | `millis()-lastOled >= 2000` | 2 s | `main.cpp:1224` | 畫面更新 |
+| mDNS 重查 | `resolveInterval` | 5 s（未確認）/60 s（確認） | `main.cpp:1231` | 相機 IP 刷新 |
 
 ### 2.3 文檔與代碼不符處（風扇）
 
@@ -127,11 +127,11 @@
 
 | 變量 | 默認值 | API 範圍（constrain） | UI 滑條 min/max | 用途 | 位置 |
 |------|--------|---------------------|----------------|------|------|
-| `targetTemp` | `28.0` | `10.0 ~ 40.0` | 10/40/step 0.1 | 單目標溫度 °C | 全局；`handleControl()` 寫入 |
-| `hysteresis` | `0.5` | `0.01 ~ 3.0` | 0.01/3/step 0.01 | 維持死區 ±hysteresis °C | 全局；`handleControl()` 寫入 |
-| `safeMin` | `5.0` | `0 ~ 20` | 0/20/step 0.5 | 巢穴最低安全溫度（動物保護） | 全局；`handleControl()` 寫入 |
-| `safeMax` | `35.0` | `20 ~ 50` | 20/50/step 0.5 | 巢穴最高安全溫度 | 全局；`handleControl()` 寫入 |
-| `ventMax` | `50.0` | `40 ~ 80` | 40/80/step 1 | 出風口斷電閾值（硬件保護） | 全局；`handleControl()` 寫入，`loadState()` 再 clamp |
+| `targetTemp` | `28.0` | `10.0 ~ 40.0` | 10/40/step 0.1 | 單目標溫度 °C | `main.cpp:60` |
+| `hysteresis` | `0.5` | `0.01 ~ 3.0` | 0.01/3/step 0.01 | 維持死區 ±hysteresis °C | `main.cpp:61` |
+| `safeMin` | `5.0` | `0 ~ 20` | 0/20/step 0.5 | 巢穴最低安全溫度（動物保護） | `main.cpp:84` |
+| `safeMax` | `35.0` | `20 ~ 50` | 20/50/step 0.5 | 巢穴最高安全溫度 | `main.cpp:85` |
+| `ventMax` | `50.0` | `40 ~ 80` | 40/80/step 1 | 出風口斷電閾值（硬件保護） | `main.cpp:86` |
 
 > ⚠️ **`ventMax` 範圍在 `handleControl()` 中是 `40~80`**（README 舊文本曾寫 `30~80`，現已同步為 40~80）。在 `loadState()` 中 clamp 也是 `40.0~80.0`。請以**40~80 為準**。
 >
@@ -141,11 +141,11 @@
 
 | 變量 | 默認 | API 範圍 | 位置 | 用途 |
 |------|------|----------|------|------|
-| `nestOffset` | 0 | `-5.0 ~ 5.0` | 全局；`handleControl()` 寫入 | 巢穴 DS18B20 校準 |
-| `roomOffset` | 0 | `-5.0 ~ 5.0` | 同上 | 活動區 |
-| `ventOffset` | 0 | `-5.0 ~ 5.0` | 同上 | 出風口 |
+| `nestOffset` | 0 | `-5.0 ~ 5.0` | `main.cpp:98`, 433-437 | 巢穴 DS18B20 校準 |
+| `roomOffset` | 0 | `-5.0 ~ 5.0` | `82`, 287-291 | 活動區 |
+| `ventOffset` | 0 | `-5.0 ~ 5.0` | `82`, 293-295 | 出風口 |
 
-偏移在 `readSensor()` 中疊加到 raw 讀值（`raw[i] += offs`）。**對濾波值和 `readTemps[]` 原始值都生效**（同一 `raw[i] += offs` 後分別走濾波與 readTemps）。控制、`/data`、OLED、CSV 用的都是濾波值，`readTemps[]` 目前沒有接口輸出。
+偏移在 `readSensor()` 中疊加到 raw 讀值，參見 `main.cpp:345`。**對濾波值和 `readTemps[]` 原始值都生效**（同一 `raw[i] += offs` 後分別走濾波與 readTemps）。控制、`/data`、OLED、CSV 用的都是濾波值，`readTemps[]` 目前沒有接口輸出。
 
 ### 3.3 閾值生效優先級
 
@@ -166,13 +166,13 @@
 
 | 參數 | 變量 | 默認 | 位置 | 說明 |
 |------|------|------|------|------|
-| 溫溼壓讀取週期 | `BME_INTERVAL_MS` | `1000` ms | 全局常量 | 1 Hz，加熱器關閉 |
-| Gas 量測間隔 | `BME_GAS_EVERY` | `10` | 全局常量 | 每 10 次讀取開一次加熱器（320°C/150ms）量 Gas，即 10 s 一次 |
-| Gas 燒機期 | `BME_BURNIN_MS` | `600000` ms | 全局常量 | 上電前 10 分鐘 Gas 值勿引用 |
-| Gas 基線 EMA | `BME_GAS_ALPHA` | `0.02f` | 全局常量 | `bmeGasRel` 的分母 |
-| 結露警示進入餘量 | `COND_ON_MARGIN` | `1.0f` °C | 全局常量 | 出風口 ≤ 露點 + 1°C → `condRisk=true` |
-| 結露警示退出餘量 | `COND_OFF_MARGIN` | `2.0f` °C | 全局常量 | 出風口 > 露點 + 2°C → `condRisk=false`（中間保持，遲滯） |
-| BME 數據過期 | `COND_STALE_MS` | `30000` ms | 全局常量 | BME 離線或 30 s 無成功讀取 → `condRisk` 強制 false |
+| 溫溼壓讀取週期 | `BME_INTERVAL_MS` | `1000` ms | `main.cpp:57` | 1 Hz，加熱器關閉 |
+| Gas 量測間隔 | `BME_GAS_EVERY` | `10` | `main.cpp:58` | 每 10 次讀取開一次加熱器（320°C/150ms）量 Gas，即 10 s 一次 |
+| Gas 燒機期 | `BME_BURNIN_MS` | `600000` ms | `main.cpp:63` | 上電前 10 分鐘 Gas 值勿引用 |
+| Gas 基線 EMA | `BME_GAS_ALPHA` | `0.02f` | `main.cpp:64` | `bmeGasRel` 的分母 |
+| 結露警示進入餘量 | `COND_ON_MARGIN` | `1.0f` °C | `main.cpp:70` | 出風口 ≤ 露點 + 1°C → `condRisk=true` |
+| 結露警示退出餘量 | `COND_OFF_MARGIN` | `2.0f` °C | `main.cpp:71` | 出風口 > 露點 + 2°C → `condRisk=false`（中間保持，遲滯） |
+| BME 數據過期 | `COND_STALE_MS` | `30000` ms | `main.cpp:72` | BME 離線或 30 s 無成功讀取 → `condRisk` 強制 false |
 
 `condRisk` **僅警示**（`/data` 字段、網頁橫幅、OLED `DEW`），不進入 `controlTemp()`，不寫 EEPROM。出風口氣溫只是冷端表面的代理量，警示可能偏晚。
 
@@ -240,7 +240,7 @@ prevNestT = nestT;
 
 ## 4. EEPROM 地址映射
 
-主 ESP `EEPROM.begin(256)`，flash 模擬，**`EEPROM.commit()` 才真正寫**。映射見 `saveState()` / `loadState()`。
+主 ESP `EEPROM.begin(256)`，flash 模擬，**`EEPROM.commit()` 才真正寫**。映射見 `main.cpp:474-520`。
 
 | 地址偏移 | 長度 | 字段 | C++ 存取 | 寫入時機 |
 |----------|------|------|----------|---------|
@@ -266,8 +266,8 @@ prevNestT = nestT;
 ```text
 if EEPROM[0] != 0xAA → 使用代碼默認值，return
 else 讀全部字段
-  · ventMax 越界 → clamp 到 [40, 80]
-  · wifiMode 越界 (>1) → 設為 0
+  · ventMax 越界 → clamp 到 [40, 80]        （main.cpp:504）
+  · wifiMode 越界 (>1) → 設為 0              （main.cpp:509）
   · SSID 空 ('\0') 或 0xFF（未寫flash）→ 用默認 "OPhone 12" / "qwer1234"
 ```
 
@@ -286,7 +286,7 @@ else 讀全部字段
 
 STA 默認憑據：`OPhone 12` / `qwer1234`，當 EEPROM 中 SSID 為空或 0xFF 時回退。
 
-相機固件無 EEPROM 配置，**帳密硬編碼在 `camera/src/main.cpp` 開頭**：
+相機固件無 EEPROM 配置，**帳密硬編碼在 `camera/src/main.cpp:12-15`**：
 - `AP_SSID = "OPhone 12"`、`AP_PASS = "qwer1234"`（首選）
 - `FALLBACK_SSID = "ESP32-TEMP"`、`FALLBACK_PASS = "12345678"`（回退）
 
@@ -323,11 +323,11 @@ STA 默認憑據：`OPhone 12` / `qwer1234`，當 EEPROM 中 SSID 為空或 0xFF
 `POST /control?nestOff=-0.3&roomOff=0&ventOff=0.2`，每項 `-5~5`。
 生效時機：**下一次 `readSensor()` 讀數時**（而非下一次 `controlTemp`），因為偏移在 `readSensor()` 中累加到 raw 讀值後才進入濾波器。
 
-如果斷線時 `*(filtPtrs[i]) = NAN`，下次恢復時**首次讀值直接設為 raw（不經過 EMA）**（`readSensor()`），所以重新校準後只需一次讀數就能"重置濾波"，斷線反而是恢復校準的契機。
+如果斷線時 `*(filtPtrs[i]) = NAN`，下次恢復時**首次讀值直接設為 raw（不經過 EMA）**（`main.cpp:346-347`），所以重新校準後只需一次讀數就能"重置濾波"，斷線反而是恢復校準的契機。
 
 ### 6.4 我要換感測器
 
-更新 `src/main.cpp` 裡 `nestAddr` / `roomAddr` / `ventAddr` 這三個 `DeviceAddress` 常量（8 字節十六進制），重新燒錄。換下來的舊 ROM 不會被清出 EEPROM（EEPROM 不存 ROM 位址，ROM 是代碼常量）。
+更新 `src/main.cpp:36-38` 的 `DeviceAddress` 常量（8 字節十六進制），重新燒錄。換下來的舊 ROM 不會被清出 EEPROM（EEPROM 不存 ROM 位址，ROM 是代碼常量）。
 
 獲取新 ROM：調試時看啟動 Serial 的 `doScan()` 輸出，`[?]` 標記的就是未識別的設備，後面跟的 16 位十六進制串即為 ROM。
 
@@ -388,22 +388,22 @@ STA 默認憑據：`OPhone 12` / `qwer1234`，當 EEPROM 中 SSID 為空或 0xFF
 
 | 參數 | 值 | 位置 |
 |------|-----|------|
-| 主 WiFi SSID/PSK | `"OPhone 12"` / `"qwer1234"` | 文件開頭 `AP_SSID` / `AP_PASS` |
-| 回退 WiFi SSID/PSK | `"ESP32-TEMP"` / `"12345678"` | 文件開頭 `FALLBACK_SSID` / `FALLBACK_PASS` |
-| IR 引腳 | 47 | `PIN_IR` |
-| LED 引腳 | 3 | `PIN_LED` |
-| 串流端口 | 80 | `startCameraServer()` |
-| 控制端口 | 81 | `startCameraServer()` |
-| ctrl_port | 32769 | `startCameraServer()`（與默認 32768 錯開） |
-| 最大併發客戶端 | 4 | `startCameraServer()`（兩個 server 各 4） |
-| send_wait_timeout | 1 s | `startCameraServer()` |
-| 流無幀超時 | 10000 ms | `stream_handler()` |
-| 幀大小 | VGA 640×480（無 PSRAM 時配置成 QVGA，但隨後 `set_framesize` 又改回 VGA，見 ARCHITECTURE §4.1） | `setup()` 的 `camera_config_t` |
-| JPEG quality | 16 | `setup()` 的 `camera_config_t` |
-| xclk | 20 MHz | `setup()` 的 `camera_config_t` |
-| fb_count | 2（PSRAM）/ 1（無 PSRAM） | `setup()` 的 `camera_config_t` |
-| grab_mode | `CAMERA_GRAB_LATEST` | `setup()` 的 `camera_config_t` |
-| 傳感器後處理 | `vflip=1, hmirror=0, brightness=1, contrast=1, exposure_ctrl=1, agc_gain=0, gain_ctrl=1, gainceiling=2, ae_level=1` | `setup()` 裡 `s->set_*()` |
+| 主 WiFi SSID/PSK | `"OPhone 12"` / `"qwer1234"` | `:12-13` |
+| 回退 WiFi SSID/PSK | `"ESP32-TEMP"` / `"12345678"` | `:14-15` |
+| IR 引腳 | 47 | `:17` |
+| LED 引腳 | 3 | `:18` |
+| 串流端口 | 80 | `:126` |
+| 控制端口 | 81 | `:145` |
+| ctrl_port | 32769 | `:146`（與默認 32768 錯開） |
+| 最大併發客戶端 | 4 | `:127, 147` |
+| send_wait_timeout | 1 s | `:130` |
+| 流無幀超時 | 10000 ms | `:48` |
+| 幀大小 | VGA 640×480（無 PSRAM 時 QVGA） | `:227, :231` |
+| JPEG quality | 16 | `:228` |
+| xclk | 20 MHz | `:221` |
+| fb_count | 2（PSRAM）/ 1（無 PSRAM） | `:225, :233` |
+| grab_mode | `CAMERA_GRAB_LATEST` | `:223` |
+| 傳感器後處理 | `vflip=1, hmirror=0, brightness=1, contrast=1, exposure_ctrl=1, agc_gain=0, gain_ctrl=1, gainceiling=2, ae_level=1` | `:243-255` |
 
 **這些參數都沒有 UI 調整入口**，要改只能重新燒錄。
 
