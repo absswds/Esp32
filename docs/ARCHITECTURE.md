@@ -2,7 +2,7 @@
 
 > 本文檔對 ESP32 TEC 蟄眠實驗溫控系統做完整的架構層面梳理，涵蓋兩個獨立固件目標的模塊劃分、數據流、狀態機與併發模型。可獨立閱讀，無需先讀其他文檔。
 >
-> 源碼分析基礎（只讀，未做任何修改）：`src/main.cpp`（1240 行，主 ESP，含 2026-09-19 `abc8f9a` BME688 接入；**2026-10-04 解凍後約 1340 行**：換裝 BME680、1 Hz 讀取、防結露警示 `condRisk`、斷電自動恢復——相關小節已更新，其餘行號仍為 09-26 版本，請先 grep）、`camera/src/main.cpp`（275 行，相機）、`platformio.ini` / `camera/platformio.ini`。行號於 2026-09-26 按當前版本重新核對。
+> 源碼分析基礎（只讀，未做任何修改）：`src/main.cpp`（1240 行，主 ESP，含 2026-09-19 `abc8f9a` BME688 接入；**2026-10-04 解凍後約 1340 行**：換裝 BME680、1 Hz 讀取、防結露警示 `condRisk`、斷電自動恢復——相關小節已更新）、`camera/src/main.cpp`（275 行，相機）、`platformio.ini` / `camera/platformio.ini`。本文不寫行號，一律用函數名/變量名定位，見文末「源碼定位速查」。
 
 ---
 
@@ -76,7 +76,7 @@
 
 `src/main.cpp` 是單文件 Arduino sketch，按職責可在閱讀上劃分為 7 個模塊（**代碼本身沒有物理拆分**，所有函數與全局都在同一編譯單元，靠註釋分節組織）。下表給出每個模塊的入口、關鍵函數、依賴與產出。
 
-### 3.1 全局配置與常量（`main.cpp:14-101`）
+### 3.1 全局配置與常量（文件開頭的 `#define` 與全局變量）
 
 | 項 | 值 | 備註 |
 |----|----|------|
@@ -91,7 +91,7 @@
 | `BME_INTERVAL_MS=1000`, `BME_GAS_EVERY=10`, `BME_BURNIN_MS=600000`, `BME_GAS_ALPHA=0.02f` | BME680 溫溼壓讀取週期（1 Hz）/ 每 N 次量一次 Gas / Gas 燒機期 / Gas 基線 EMA | 見 3.7 |
 | `COND_ON_MARGIN=1.0f`, `COND_OFF_MARGIN=2.0f`, `COND_STALE_MS=30000` | 防結露警示進入/退出餘量（°C，相對露點）/ BME 數據過期判定 | 見 3.7 |
 
-### 3.2 感測層（`main.cpp:316-362, 992-1037`）
+### 3.2 感測層（`readSensor()`、`doScan()`）
 
 - `doScan()` — OneWire/Dallas 總線掃描，按 ROM 比對給三顆感測器賦角色；處理 `cnt==0` 回退路徑並打印 raw ROM 便於排錯。
 - `readSensor()` — **非阻塞轉換狀態機**：先 `requestTemperatures()` 立即返回置 `convPending=true`；下次 loop 迭代等到 `millis()-convStart >= 750` 才真正讀 3 個溫度。讀後做範圍合法化（`-55~85°C` 外判 NAN；注意判據是 `> 85.0`，**85.0 本身被接受**，而 85°C 正是 DS18B20 的上電覆位值，見 LIMITATIONS #37）、校準偏移疊加、EMA 濾波，最後寫入 `nestT/roomT/ventT`（濾波值，`/data` 輸出的就是它）和 `readTemps[]`（偏移後未濾波值，目前沒有任何接口對外輸出），並調用 `controlTemp()` 閉環。
@@ -100,7 +100,7 @@
 
 **輸入：DS18B20 OneWire 總線；輸出：3 個濾波後溫度 + raw 數組。**
 
-### 3.3 控制層（`main.cpp:109-238`）
+### 3.3 控制層（`setFan()` … `controlTemp()`）
 
 控制層是**單點真相來源** `controlTemp()`，被 `readSensor()` 和 `handleControl()` 兩處調用以立即生效新閾值。
 
@@ -110,10 +110,10 @@
 - `controlTemp()` — 安全 + bang-bang 五段式決策（詳見 [6.1](#61-controltemp-狀態機)）。
 - `emergencyStop()` / `stopAll()` / `startAll()` — 系統級狀態切換，含風扇延遲邏輯。**`TEC_EN` 只在 `startAll()`（及 `/test?en=1`）中拉高**；`setup()` 先把它拉低，2026-10-04 起若 `loadState()` 恢復出 `systemOn=true`，`setup()` 末尾會自動調用 `startAll()`（斷電自動恢復，LIMITATIONS #31，未上機驗證）。`emergencyStop()` 已把 `systemOn=false` 存入 EEPROM，所以緊急停機不會被重啟復活。
 
-### 3.4 網絡層（`main.cpp:364-555, 1126-1181`）
+### 3.4 網絡層（`handle*()` 各 handler、`setup()` 裡的 `server.on(...)`）
 
 - `WebServer server(80)` — 5 個 handler 路由 + 3 個 inline lambda 路由（共 8 個）：
-  - `GET /` → `handleRoot()` 返回 `PROGMEM` 內嵌的 SPA HTML（`main.cpp:557-935`，約 380 行 inline HTML+CSS+JS）。
+  - `GET /` → `handleRoot()` 返回 `PROGMEM` 內嵌的 SPA HTML（`INDEX[]`，約 410 行 inline HTML+CSS+JS）。
   - `GET /data` → `handleData()` JSON 狀態快照（溫度為濾波值；含 `bmeOk/bmeT/bmeH/bmeP/bmeGas/bmeGasRel/bmeDP`，BME 不在線時為 `null`）。
   - `POST /control` → `handleControl()` 參數寫入 + `scheduleStateSave()` / `saveState()`，再 `controlTemp()` 即時生效。
   - `GET /test` → `handleTest()` 手動 PWM 測試，置 `tecManual/fanManual` 標誌。
@@ -122,19 +122,19 @@
   - `GET /strip`（inline，2026-09-26） → `?b=0-100` 設 LED 燈帶亮度（GPIO13，LEDC ch4，5 kHz），回 `{"strip":N}`；不存 EEPROM。
   - `GET /camenable`（inline） → 切換 `camEnabled` 標誌並回 JSON。
 
-### 3.5 顯示層（`main.cpp:941-983, 1212-1224`）
+### 3.5 顯示層（`updateOLED()`、`loop()` 裡的 OLED 段）
 
 - `updateOLED()` — U8g2 `firstPage()/nextPage()` 分頁繪製，6 段佈局（巢穴/活動/出風口溫度 + 狀態 + 風扇% + 目標 + 模式），每 2 秒刷新。
 - 主循環每 5 秒 `Wire.beginTransmission(0x3C)` 探測，OLED 斷線自動 `u8g2.begin()` 重初始化（熱插拔恢復，commit `e9c6829`）。
 
-### 3.6 持久化層（`main.cpp:469-527`）
+### 3.6 持久化層（`scheduleStateSave()` / `saveState()` / `loadState()`）
 
 - `scheduleStateSave()` — 去抖調度：設 `stateSavePending=true`+`stateSaveDue`。
 - `saveState()` — 寫 EEPROM 256B（詳細地址見 CONFIG_GUIDE）。
 - `loadState()` — 上電恢復，含 `0xAA` 有效標記、`ventMax` 越界 clamp、`wifiMode>1` reset、SSID 0xFF 兼容默認回退。
 - `setWifiModeAndRestart(mode)` — `saveState()` + `delay(200)` + `ESP.restart()`，用於 WiFi 模式切換。
 
-### 3.7 環境監測層 BME680（`main.cpp:48-73, 263-359`，2026-09-19 `abc8f9a` 接入，2026-10-04 改 1 Hz + 防結露警示）
+### 3.7 環境監測層 BME680（`bme*` 全局與 `COND_*` 常量、`bmeInit()` … `updateCondRisk()`，2026-09-19 `abc8f9a` 接入，2026-10-04 改 1 Hz + 防結露警示）
 
 - `bmeInit(quiet)` — 在 `setup()` 中 `Wire.begin(21,22)` 之後、`u8g2.begin()` 之前調用；依次探測 0x76 / 0x77，設過採樣、IIR 與氣體加熱器 320°C/150ms。用 Adafruit BME680 驅動（實際裝的就是 BME680），**未用 BSEC**，因此沒有 IAQ / eCO₂，只有氣體電阻。
 - `bmeTick()` — 每次 `loop()` 調用的非阻塞狀態機：`beginReading()` 記下完成時刻，到點才 `endReading()` 取值；每 1 s（`BME_INTERVAL_MS`）讀一次溫溼壓，加熱器平時關閉（`setGasHeater(0,0)`），每 `BME_GAS_EVERY`=10 次才開加熱器量一次 Gas（即 10 s 一次，降低自熱）；成功讀取時更新 `lastBmeOk`。連續 3 次 `beginReading` 失敗標記離線，離線後每 60 s 重試 `bmeInit(true)`（可熱插拔）；單次 `endReading` 失敗沿用上一筆。
@@ -149,16 +149,16 @@
 
 `camera/src/main.cpp` 極簡，按職責可分 3 塊：
 
-| 模塊 | 函數 | 位置 | 說明 |
-|------|------|------|------|
-| 串流服務 | `stream_handler()` | `camera/src/main.cpp:30-78` | MJPEG multipart 幀循環；每幀前用 `send(fd, &probe, 0, MSG_DONTWAIT)` 探測客戶端是否斷開；10 秒無幀發出超時退出；**始終 `esp_camera_fb_return(fb)`** 防幀緩存洩漏 |
-| 快照服務 | `capture_handler()` | `82-91` | 單幀 JPEG 抓取，用於不發 multipart 的客戶端 |
-| 控制 / 狀態 | `light_handler()` / `status_handler()` | `95-119` | IR/LED GPIO 控制與狀態 JSON；GET query 參數解析 |
-| 啟動 | `startCameraServer()` | `123-161` | 起 2 個 `httpd` 實例，stream(80) 與 control(81)；`send_wait_timeout=1` 避免慢客戶端阻塞 5 秒；`ctrl_port=32769` 與默認 32768 錯開 |
-| WiFi | `connectWiFi()` | `163-193` | 兩級回退：`OPhone 12` → `ESP32-TEMP`；連接成功後 `(re)startCameraServer()` + `MDNS.begin("esp32-cam")`（重連時只 `httpd_stop` 了串流 server，控制 server 未停，再次啟動會打印 "Control server failed!"，舊實例仍在工作） |
-| setup / loop | `setup()` / `loop()` | `197-275` | camera_config 全字段硬編碼；PSRAM 缺失回退 QVGA DRAM；`set_vflip/hmirror/brightness/contrast` 等傳感器調參寫死；主 loop 僅監測 WiFi 掉線重連 |
+| 模塊 | 函數 | 說明 |
+|------|------|------|
+| 串流服務 | `stream_handler()` | MJPEG multipart 幀循環；每幀前用 `send(fd, &probe, 0, MSG_DONTWAIT)` 探測客戶端是否斷開；10 秒無幀發出超時退出；**始終 `esp_camera_fb_return(fb)`** 防幀緩存洩漏 |
+| 快照服務 | `capture_handler()` | 單幀 JPEG 抓取，用於不發 multipart 的客戶端 |
+| 控制 / 狀態 | `light_handler()` / `status_handler()` | IR/LED GPIO 控制與狀態 JSON；GET query 參數解析 |
+| 啟動 | `startCameraServer()` | 起 2 個 `httpd` 實例，stream(80) 與 control(81)；`send_wait_timeout=1` 避免慢客戶端阻塞 5 秒；`ctrl_port=32769` 與默認 32768 錯開 |
+| WiFi | `connectWiFi()` | 兩級回退：`OPhone 12` → `ESP32-TEMP`；連接成功後 `(re)startCameraServer()` + `MDNS.begin("esp32-cam")`（重連時只 `httpd_stop` 了串流 server，控制 server 未停，再次啟動會打印 "Control server failed!"，舊實例仍在工作） |
+| setup / loop | `setup()` / `loop()` | camera_config 全字段硬編碼；PSRAM 缺失回退 QVGA DRAM；`set_vflip/hmirror/brightness/contrast` 等傳感器調參寫死；主 loop 僅監測 WiFi 掉線重連 |
 
-### 4.1 傳感器配置（`camera/src/main.cpp:202-228`）
+### 4.1 傳感器配置（`setup()` 裡的 `camera_config_t`）
 
 VGA 640×480 / JPEG quality 16 / `CAMERA_GRAB_LATEST` / `fb_count=2` / `fb_location=PSRAM` / `xclk=20MHz`。
 **無 PSRAM 時** (`!psramFound()`) 回退 DRAM + 單幀緩衝，避免 DMA 崩潰（這是 README 反覆強調"必須用 `dfrobot_dfr1154` 板型"的根本原因）。注意：代碼裡的 QVGA 回退實際無效——`esp_camera_init()` 之後無條件 `s->set_framesize(s, FRAMESIZE_VGA)` 又改回了 VGA，只有 `fb_location`/`fb_count` 的回退生效（鎖版未改）。
@@ -244,7 +244,7 @@ guard 3  nestT < safeMin || nestT > safeMax           → setTecPwm(0)+風扇 25
 
 **重要：** 處於死區時如檢測到剛從製冷/加熱切出（`cooling||heating` 仍為 true），啟動 `fanAfterRunTimer`；之後 10 秒內每幀保持 `FAN_AFTERRUN_SPEED=200`(~78%)，超過 10 秒關扇。
 
-> ⚠️ 注意 README 提到"製冷時風扇應以 52% 運行"的實測發現，但**當前 `controlTemp()` 中製冷分支仍寫 `setFan(255)` 全速**（`main.cpp:215-220`）——這是已知的代碼與文檔偏差，鎖版凍結不改，演示時手動設 52%，詳 [LIMITATIONS.md](../LIMITATIONS.md) #34 與 [CONFIG_GUIDE.md](CONFIG_GUIDE.md) §2.3。
+> ⚠️ 注意 README 提到"製冷時風扇應以 52% 運行"的實測發現，但**當前 `controlTemp()` 中製冷分支仍寫 `setFan(255)` 全速**——這是已知的代碼與文檔偏差，鎖版凍結不改，演示時手動設 52%，詳 [LIMITATIONS.md](../LIMITATIONS.md) #34 與 [CONFIG_GUIDE.md](CONFIG_GUIDE.md) §2.3。
 
 ### 6.2 風扇 after-run 狀態機（`loop()` 內獨立）
 
@@ -302,13 +302,13 @@ loop 中 if pending && (long)(millis()-due)>=0 → saveState(); pending=false
 主 ESP 沒有顯式多任務。所有控制、感測、HTTP、顯示都在 `loop()` 串行執行。Arduino-ESP32 core 在背後運行 WiFi stack、LWIP、mDNS 等內部 task，但 **HTTP handler 不在這些 task 裡執行**：`loop()` 調 `server.handleClient()`，由 `WebServer` 在 loop 任務內同步分派到 `handleControl()` 等 user handler。因此 handler 與 `readSensor()`/`controlTemp()` 不會併發，不存在數據競爭。
 
 **關鍵的時序要求：**
-- `loop()` 頂部 `esp_task_wdt_reset()` 必須在 **7 秒**內執行（`esp_task_wdt_init(7, true)`，`main.cpp:1050`；緊鄰的源碼註釋仍寫"3 秒"，已過時，以代碼 7 秒為準）。
+- `loop()` 頂部 `esp_task_wdt_reset()` 必須在 **7 秒**內執行（`setup()` 裡的 `esp_task_wdt_init(7, true)`；緊鄰的源碼註釋仍寫"3 秒"，已過時，以代碼 7 秒為準）。
 - OneWire 時序由 `paulstoffregen/OneWire` 庫用 `micros()` 軟件循環保證，對 WiFi 中斷極敏感。基於此 README 強調"`doScan()` 必須 `WiFi.softAP()` 之前執行"。
 - HTTP 處理是非阻塞的，單個請求不應 >100ms，否則後續 IO 會被卡。`handleLight` 中的相機代理同步連接最長等 2 秒，可能影響響應性（用 `esp_task_wdt_reset()` 中間餵狗避免重啟）。
 
 ### 7.2 相機：每個 httpd 實例一個 server task
 
-ESP-IDF `esp_http_server` 的每個實例只有**一個 server task**，在它的循環裡輪詢監聽 socket 與控制 socket，並在該 task 內調用 URI handler（[官方文檔](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/protocols/esp_http_server.html)）。`stream_handler()` 是 `while(true)` 阻塞式，直到客戶端斷開或 10 秒無幀超時才返回——**串流進行期間，80 口這個實例不能再服務第二路 `/stream` 或 `/capture`**。控制端點放在 81 口的獨立實例（獨立 server task、`ctrl_port=32769`）正是為了不被串流卡住。`max_open_sockets=4` 只是允許同時保持 4 個連接，**不等於能同時推 4 路流**（相機固件第 2 行"Each client connection gets its own task"的註釋是錯的）。
+ESP-IDF `esp_http_server` 的每個實例只有**一個 server task**，在它的循環裡輪詢監聽 socket 與控制 socket，並在該 task 內調用 URI handler（[官方文檔](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/protocols/esp_http_server.html)）。`stream_handler()` 是 `while(true)` 阻塞式，直到客戶端斷開或 10 秒無幀超時才返回——**串流進行期間，80 口這個實例不能再服務第二路 `/stream` 或 `/capture`**。控制端點放在 81 口的獨立實例（獨立 server task、`ctrl_port=32769`）正是為了不被串流卡住。`max_open_sockets=4` 只是允許同時保持 4 個連接，**不等於能同時推 4 路流**（相機固件開頭那句"Each client connection gets its own task"的註釋是錯的）。
 
 `capture_handler()` 與 `stream_handler()` 在同一實例，所以串流期間 `/capture` 會排隊等待，而不是併發搶幀。
 
@@ -364,7 +364,7 @@ EEPROM 詳細地址映射見 [CONFIG_GUIDE.md]。
 1. **單文件巨 sketch**：`src/main.cpp` 約 1340 行包含感測、控制、HTTP、HTML、OLED、EEPROM、BME680，模塊邊界靠註釋組織，不利於單元測試與並行開發。這是本系統**只能寫 mirror 測試、無法直接測源碼**（見 `test/README_TESTS.md`）的最大根因。
 2. **無感測/控制抽象層**：溫度讀、決策、PWM 寫三件事在 `controlTemp()` 內耦合，無法在 PC 上跑邏輯測試（必須 mock OneWire/Dallas/WebServer/ledc 全套 Arduino-API）。
 3. **狀態散落全局變量**：`systemOn/cooling/heating/nanCount` 等十餘個全局變量無封裝，任何函數都能改（目前 HTTP handler 與感測都在 `loop()` 任務內串行執行，沒有併發競爭；但若日後改成多任務就需要加鎖）。
-4. **HTML/CSS/JS 在 PROGMEM 內 raw 字符串中**：~380 行前端代碼無法 lint、無法類型檢查、無法複用組件，靠 `R"HTML(...)"` 維護極脆弱。
+4. **HTML/CSS/JS 在 PROGMEM 內 raw 字符串中**：約 410 行前端代碼無法 lint、無法類型檢查、無法複用組件，靠 `R"HTML(...)"` 維護極脆弱。
 5. **相機固件無 OTA、無配置接口**：換 WiFi SSID/密碼、改 IR/LED 引腳都要重新燒錄，與主 ESP 的可配置 WiFi 模式形成體驗落差。
 6. **兩固件無共享庫**：`include/`、`lib/` 均為空模板，養成"放了也不會被編譯"的盲區。
 7. **TWO `httpd` 的 ctrl_port 錯開靠硬編碼 32769**：未做枚舉常量化，未來擴第三個 server 時易撞端口。
@@ -374,32 +374,37 @@ EEPROM 詳細地址映射見 [CONFIG_GUIDE.md]。
 
 ## 附：源碼定位速查
 
-| 關心點 | 位置 |
+本文不寫行號（源碼三個月裡從約 815 行漲到約 1340 行，行號很快就過時），下表列的是函數名/變量名，在源碼裡直接搜即可。
+
+| 關心點 | 在 `src/main.cpp` 裡搜 |
 |--------|------|
-| 引腳定義 | `src/main.cpp:14-24` |
-| ROM 位址 | `src/main.cpp:36-38` |
-| BME680 全局與常量（含 `COND_*`） | `src/main.cpp:48-73` |
-| `bmeInit` / `bmeTick` / `condRiskNext` / `updateCondRisk` | `src/main.cpp:263-359` |
-| 安全閾值默認 | `src/main.cpp:84-86` |
-| `setFan` / `setTec` / `setTecPwm` | `main.cpp:109-168` |
-| `stopAll`/`startAll`/`emergencyStop` | `main.cpp:125-152` |
-| `controlTemp`（核心決策） | `main.cpp:170-238` |
-| `readSensor`（非阻塞狀態機） | `main.cpp:316-362` |
-| `handleData` / `handleControl` / `handleDiag` / `handleTest` | `main.cpp:364-555` |
-| HTTP 路由註冊 | `main.cpp:1126-1181` |
-| 儀表板 HTML | `main.cpp:557-935` |
-| `scheduleStateSave` / `saveState` / `loadState` / `setWifiModeAndRestart` | `main.cpp:469-527` |
-| `doScan` | `main.cpp:992-1037` |
-| `setup`（含看門狗/EEPROM/I2C 掃描/BME/WiFi 模式） | `main.cpp:1039-1183` |
-| `loop`（看門狗/WS/NAN 守衛/風扇 after-run/重掃/讀取/BME/OLED/狀態保存/mDNS 重查） | `main.cpp:1185-1240` |
-| `updateOLED` | `main.cpp:941-983` |
-| 相機引腳/PIN_IR/PIN_LED | `camera/src/main.cpp:17-18` |
-| 相機 WiFi 帳密常量 | `camera/src/main.cpp:12-15` |
-| 相機 `camera_config_t` | `camera/src/main.cpp:202-228` |
-| 相機 `stream_handler` | `camera/src/main.cpp:30-78` |
-| 相機 `startCameraServer` | `camera/src/main.cpp:123-161` |
-| 相機 `connectWiFi` | `camera/src/main.cpp:163-193` |
+| 引腳定義 | `FAN_PIN` / `TEC_EN` / `TEC_LPWM` / `TEC_RPWM` / `DS18B20_PIN` / `LED_PIN` |
+| ROM 位址 | `nestAddr` / `roomAddr` / `ventAddr` |
+| BME680 全局與常量 | `BME_INTERVAL_MS`、`BME_GAS_EVERY`、`COND_ON_MARGIN` 等 |
+| BME680 讀取與防結露 | `bmeInit()` / `bmeTick()` / `condRiskNext()` / `updateCondRisk()` |
+| 安全閾值默認值 | `safeMin` / `safeMax` / `ventMax` |
+| PWM 輸出 | `setFan()` / `setTec()` / `setTecPwm()` / `setStrip()` |
+| 系統開關 | `stopAll()` / `startAll()` / `emergencyStop()` |
+| 核心決策 | `controlTemp()` |
+| 非阻塞讀數 | `readSensor()` |
+| HTTP handler | `handleData()` / `handleControl()` / `handleDiag()` / `handleTest()` |
+| HTTP 路由註冊 | `setup()` 裡的 `server.on(` |
+| 儀表板 HTML | `INDEX[] PROGMEM` |
+| 持久化 | `scheduleStateSave()` / `saveState()` / `loadState()` / `setWifiModeAndRestart()` |
+| 總線掃描 | `doScan()` / `sameAddr()` |
+| 啟動流程（看門狗/EEPROM/I2C 掃描/BME/WiFi/斷電恢復） | `setup()` |
+| 主循環（看門狗/HTTP/NAN 守衛/風扇 after-run/重掃/讀數/BME/OLED/狀態保存/mDNS 重查） | `loop()` |
+| OLED | `updateOLED()` |
+
+| 關心點 | 在 `camera/src/main.cpp` 裡搜 |
+|--------|------|
+| IR/LED 引腳 | `PIN_IR` / `PIN_LED` |
+| WiFi 帳密 | `AP_SSID` / `AP_PASS` / `FALLBACK_SSID` / `FALLBACK_PASS` |
+| 傳感器配置 | `setup()` 裡的 `camera_config_t` |
+| 串流 | `stream_handler()` |
+| 兩個 httpd | `startCameraServer()` |
+| WiFi 連接與回退 | `connectWiFi()` |
 
 ---
 
-> 本文檔基於 `src/main.cpp`（1240 行，`abc8f9a`）與 `camera/src/main.cpp` 的靜態分析撰寫，源碼本身**未被修改**；2026-09-26 按當前源碼複核並更新行號。任何邏輯改動請同步更新本文的相應小節。
+> 本文檔最初基於 `src/main.cpp`（1240 行，`abc8f9a`）與 `camera/src/main.cpp` 的靜態分析撰寫，源碼本身**未被修改**；2026-10-04 的改動已同步到相關小節，行號已全部換成函數名/變量名。任何邏輯改動請同步更新本文的相應小節。
