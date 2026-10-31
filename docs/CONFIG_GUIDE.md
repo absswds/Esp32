@@ -38,10 +38,10 @@
 | TEC LPWM | `TEC_LPWM` | 26 | D3 | LEDC ch1 PWM 輸出 | 製冷方向（**線已對調**，詳見 README 注意事項） |
 | TEC RPWM | `TEC_RPWM` | 25 | D2 | LEDC ch2 PWM 輸出 | 加熱方向 |
 | DS18B20 | `DS18B20_PIN` | 4 | **D12** | OneWire 雙向 | 3 顆並聯 + 4.7kΩ 上拉到 3.3V |
-| LED 燈帶 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 數字/PWM OUT | **已裝機**（2026-10-04 用戶確認）：經 IRLZ44N 驅動 12V COB 燈帶 |
+| LED 燈帶 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 數字/PWM OUT | **已裝機**：經 IRLZ44N 驅動 12V COB 燈帶 |
 | OLED SDA | — | 21 | SDA | I2C 雙向 | SSD1306 數據 |
 | OLED SCL | — | 22 | SCL | I2C 雙向 | SSD1306 時鐘 |
-| BME680 | — | 21/22 | SDA/SCL | I2C 雙向 | **已裝機**（2026-10-04 用戶確認）：與 OLED 併線（同址 0x76/0x77 衝突時需改址） |
+| BME680 | — | 21/22 | SDA/SCL | I2C 雙向 | **已裝機**：與 OLED 併線（同址 0x76/0x77 衝突時需改址） |
 
 > ⚠️ **板標 D13=GPIO12 是 strapping pin**：接 4.7kΩ 上拉會把 ESP32 誤認為 1.8V flash 電壓，可能致磚。**OneWire 必須接 D12（GPIO4），切勿接 D13**。
 >
