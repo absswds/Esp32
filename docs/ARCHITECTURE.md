@@ -94,7 +94,7 @@
 ### 3.2 感測層（`readSensor()`、`doScan()`）
 
 - `doScan()` — OneWire/Dallas 總線掃描，按 ROM 比對給三顆感測器賦角色；處理 `cnt==0` 回退路徑並打印 raw ROM 便於排錯。
-- `readSensor()` — **非阻塞轉換狀態機**：先 `requestTemperatures()` 立即返回置 `convPending=true`；下次 loop 迭代等到 `millis()-convStart >= 750` 才真正讀 3 個溫度。讀後做範圍合法化（`-55~85°C` 外判 NAN；注意判據是 `> 85.0`，**85.0 本身被接受**，而 85°C 正是 DS18B20 的上電覆位值，見 LIMITATIONS #37）、校準偏移疊加、EMA 濾波，最後寫入 `nestT/roomT/ventT`（濾波值，`/data` 輸出的就是它）和 `readTemps[]`（偏移後未濾波值，目前沒有任何接口對外輸出），並調用 `controlTemp()` 閉環。
+- `readSensor()` — **非阻塞轉換狀態機**：先 `requestTemperatures()` 立即返回置 `convPending=true`；下次 loop 迭代等到 `millis()-convStart >= 750` 才真正讀 3 個溫度。讀後做範圍合法化（`-55~85°C` 外判 NAN；注意判據是 `> 85.0`，**85.0 本身被接受**，而 85°C 正是 DS18B20 的上電復位值，見 LIMITATIONS #37）、校準偏移疊加、EMA 濾波，最後寫入 `nestT/roomT/ventT`（濾波值，`/data` 輸出的就是它）和 `readTemps[]`（偏移後未濾波值，目前沒有任何接口對外輸出），並調用 `controlTemp()` 閉環。
 - 斷線值：`getTempC(addr)` 讀不到時返回 `DEVICE_DISCONNECTED_C`（-127），代碼裡 `== DEVICE_DISCONNECTED_F` 的比較不會命中，實際靠 `< -55` 下限判 NAN。
 - `sameAddr()` — 8 字節逐位比較，ROM 識別基礎。
 
@@ -352,7 +352,7 @@ EEPROM 詳細地址映射見 [CONFIG_GUIDE.md]。
 | F10 | 相機 WiFi 掉線 | `loop()` 5s 檢測 | `connectWiFi()` 重連 | 重連只 `httpd_stop` 了 80 口串流 server；81 口控制 server 未停，再次 `startCameraServer()` 時 81 口啟動失敗（打印 "Control server failed!"），舊實例仍在工作，功能不受影響 |
 | F11 | 串流慢客戶端 | `send_wait_timeout=1` + send(fd,0) probe | 1 秒超時斷開 | 不再阻塞其他客戶端 |
 | F12 | 幀緩衝洩漏（發送失敗） | `esp_camera_fb_return(fb)` 總是調用 | 防止 PSRAM 耗盡 | 已修復 |
-| F13 | DS18B20 上電覆位值 85.0°C（探頭接觸不良、掉電重連時出現） | 範圍檢查 `raw > 85.0` 才判 NAN，**85.0 本身被接受** | 無 | 85°C 進入 EMA（斷線後首值不經濾波直接等於 85）；出風口會誤觸 `ventT>=ventMax` 急停，巢穴會誤入極端分支。0826 CSV 有實例：16:22:57 出風 56.16°C 觸發一次誤急停（LIMITATIONS #37） |
+| F13 | DS18B20 上電復位值 85.0°C（探頭接觸不良、掉電重連時出現） | 範圍檢查 `raw > 85.0` 才判 NAN，**85.0 本身被接受** | 無 | 85°C 進入 EMA（斷線後首值不經濾波直接等於 85）；出風口會誤觸 `ventT>=ventMax` 急停，巢穴會誤入極端分支。0826 CSV 有實例：16:22:57 出風 56.16°C 觸發一次誤急停（LIMITATIONS #37） |
 | F14 | BME680 離線 | `bmeTick()` 連續 3 次 `beginReading` 失敗 | 標記離線，每 60 s 重試 | 與控制無關，`/data` 字段變 `null`；`condRisk` 強制為 false（數據過期 30 s 同理） |
 
 ---
