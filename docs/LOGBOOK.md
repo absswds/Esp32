@@ -290,4 +290,4 @@ native 單元測試 41/41 通過（新增 4 個防結露用例）。三件事都
 |---|---|---|---|
 | [#1](https://github.com/absswds/Esp32/pull/1) | `feat/led-strip-ui-docs` | 2026-09-26 21:28 | LED 燈帶、網頁改版 |
 | [#2](https://github.com/absswds/Esp32/pull/2) | `feat/bme680-condrisk-power-recovery` | 2026-10-04 15:47 | 斷電恢復、BME680 讀取頻率、防結露警示 |
-| [#4](https://github.com/absswds/Esp32/pull/4) | `claude/brave-tesla-cqg500` | 2026-10-31 12:02 | 工程日誌改寫、文檔整理、報告定稿、鎖定 PlatformIO 版本 |
+| [#4](https://github.com/absswds/Esp32/pull/4) | — | 2026-10-31 12:02 | 工程日誌改寫、文檔整理、報告定稿、鎖定 PlatformIO 版本 |
