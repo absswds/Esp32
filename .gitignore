@@ -10,6 +10,4 @@ include/README
 lib/README
 test/README
 pdf_output.txt
-CLAUDE.md
-.claude
 .playwright-mcp/
