@@ -51,7 +51,7 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**關鍵點：** 兩台 ESP32 **不共享任何硬件資源**。相機 IR/LED 在瀏覽器中由前端**直接發請求到相機 81 端口**（`toggleIR()`/`toggleLED()`）。前端只在 `camIP` 為空時才退回主 ESP 的 `/light` 代理（`setup()` 裡 `server.on("/light", …)`），但 `/data` 恆返回 `camIP`（未解析到時為默認 `192.168.4.2`），所以**實際上前端永遠直連、代理路徑走不到**；且該代理連的是相機 **80 口**，而 `/light` 註冊在 81 口，本身也是壞的（鎖版未修，見 §3.4）。串流與控制分端口，是為了避免串流佔住 80 口導致燈光無反應。
+**關鍵點：** 兩台 ESP32 **不共享任何硬件資源**。相機 IR/LED 在瀏覽器中由前端**直接發請求到相機 81 端口**（`toggleIR()`/`toggleLED()`）。前端只在 `camIP` 為空時才退回主 ESP 的 `/light` 代理（`setup()` 裡 `server.on("/light", …)`），但 `/data` 恆返回 `camIP`（未解析到時為默認 `192.168.4.2`），所以**實際上前端永遠直連、代理路徑走不到**。該代理原本連相機 80 口（`/light` 在 81 口），2026-11-02 已改連 81 口，可直接用 `http://192.168.4.1/light?ir=1` 測試。串流與控制分端口，是為了避免串流佔住 80 口導致燈光無反應。
 
 ---
 
@@ -118,7 +118,7 @@
   - `POST /control` → `handleControl()` 參數寫入 + `scheduleStateSave()` / `saveState()`，再 `controlTemp()` 即時生效。
   - `GET /test` → `handleTest()` 手動 PWM 測試，置 `tecManual/fanManual` 標誌。
   - `GET /diag` → `handleDiag()` 診斷 JSON。
-  - `GET /light`（inline） → 設計上是相機不可直連時的代理；樂觀更新本地 `lightIR/lightLED` 緩存，再盡最大努力同步到相機 `camIP:80`。**已知缺陷**：相機的 `/light` 在 81 口，連 80 口會 404；且前端總拿得到 `camIP`，實際不會走這條路徑。
+  - `GET /light`（inline） → 設計上是相機不可直連時的代理；樂觀更新本地 `lightIR/lightLED` 緩存，再盡最大努力同步到相機 `camIP:81`（2026-11-02 前誤連 80 口，會 404，已修）。前端總拿得到 `camIP`，平時不走這條路徑。
   - `GET /strip`（inline，2026-09-26） → `?b=0-100` 設 LED 燈帶亮度（GPIO13，LEDC ch4，5 kHz），回 `{"strip":N}`；不存 EEPROM。
   - `GET /camenable`（inline） → 切換 `camEnabled` 標誌並回 JSON。
 
