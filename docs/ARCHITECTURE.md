@@ -80,7 +80,7 @@
 
 | 項 | 值 | 備註 |
 |----|----|------|
-| `FAN_PIN=18`, `TEC_EN=19`, `TEC_LPWM=26`, `TEC_RPWM=25`, `DS18B20_PIN=4` | GPIO 編號 | FireBeetle 板標 D-pin ≠ GPIO，詳見 CONFIG_GUIDE |
+| `FAN_PIN=18`, `TEC_EN=19`, `TEC_LPWM=25`, `TEC_RPWM=26`, `DS18B20_PIN=4` | GPIO 編號 | FireBeetle 板標 D-pin ≠ GPIO，詳見 CONFIG_GUIDE |
 | `PWM_FREQ=25000` Hz, `PWM_RES=10`, `TEC_PWM_RES=10` | LEDC 配置 | 風扇與 TEC 一致均 10-bit |
 | `FAN_CH=0`, `TEC_L_CH=1`, `TEC_R_CH=2` | LEDC 通道分配 | 三路獨立 |
 | `EMA_ALPHA=0.5f` | 溫度濾波係數 | 指數移動平均（EMA） |

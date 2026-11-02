@@ -102,14 +102,14 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 | DS18B20 GND | — | GND | 3 顆 DS18B20 並聯（黑線） | |
 | FAN PWM | **18** | SCK | 風扇 PWM 線 | 25kHz, 10-bit |
 | TEC EN | **19** | MISO | H-bridge EN 腳 | HIGH = 啟用 TEC |
-| TEC LPWM | **26** | **D3** | H-bridge 左半橋輸入 | 製冷方向 |
-| TEC RPWM | **25** | **D2** | H-bridge 右半橋輸入 | 加熱方向 |
+| TEC LPWM | **25** | **D2** | H-bridge 左半橋輸入 | 製冷方向 |
+| TEC RPWM | **26** | **D3** | H-bridge 右半橋輸入 | 加熱方向 |
 | OLED SDA | **21** | SDA | OLED SDA | I2C 專用腳 |
 | OLED SCL | **22** | SCL | OLED SCL | I2C 專用腳 |
 | OLED VCC | — | 3.3V | OLED VCC | SSD1306 吃 3.3V |
 | OLED GND | — | GND | OLED GND | |
 
-> ⚠️ **TEC 電源線已對調（重要）：** H 橋輸出到 TEC 的兩根線已交換，使代碼的「製冷/加熱」方向與實際冷熱面一致。**不要**再對調回來——除非更換 TEC 模組後重新驗證方向。驗證方法：設 `/test?cool=255&heat=0&en=1`，摸 TEC 冷面（貼冷端換熱器那面）應變冷。
+> ⚠️ **TEC 方向（重要）：** 2026-11-02 實測網頁「製冷」實際在加熱，已在代碼裡把 LPWM/RPWM 兩個腳對調（製冷 GPIO25/D2，加熱 GPIO26/D3），H 橋到 TEC 的線和 ESP32 到 H 橋的線都沒動。以後**改代碼和改接線只能二選一**，兩邊都改會又反回去。換 TEC、重新拆裝接線後都要重新驗證：設 `/test?cool=255&heat=0&en=1`，摸 TEC 冷面（貼冷端換熱器那面）應變冷。
 
 ### FireBeetle 2 ESP32-E D-pin 陷阱
 
@@ -117,8 +117,8 @@ ESP32 開關式（bang-bang）溫控系統，用於脂尾袋鼩（fat-tailed dun
 
 | 板標 | 實際 GPIO | 可用？ | 說明 |
 |------|----------|--------|------|
-| D2 | 25 | ✅ | TEC RPWM（加熱）|
-| D3 | 26 | ✅ | TEC LPWM（製冷）|
+| D2 | 25 | ✅ | TEC LPWM（製冷）|
+| D3 | 26 | ✅ | TEC RPWM（加熱）|
 | D7 | 13 | ✅ | LED 燈帶 PWM（經 IRLZ44N 驅動 12V 燈帶；本板無 D4/GPIO27 引腳，見 DFRobot wiki DFR0654） |
 | D5 | 0 | ❌ Strapping | 勿用 |
 | D8 | 5 | ❌ Strapping | 勿用 |

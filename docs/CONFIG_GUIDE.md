@@ -35,8 +35,8 @@
 |------|-----|------|------------------|------|------|
 | FAN | `FAN_PIN` | 18 | SCK | LEDC ch0 PWM 輸出 | 風扇 PWM |
 | TEC EN | `TEC_EN` | 19 | MISO | 數字 OUT | H-bridge 使能，HIGH=ON |
-| TEC LPWM | `TEC_LPWM` | 26 | D3 | LEDC ch1 PWM 輸出 | 製冷方向（**線已對調**，詳見 README 注意事項） |
-| TEC RPWM | `TEC_RPWM` | 25 | D2 | LEDC ch2 PWM 輸出 | 加熱方向 |
+| TEC LPWM | `TEC_LPWM` | 25 | D2 | LEDC ch1 PWM 輸出 | 製冷方向（2026-11-02 實測方向反了，代碼對調了兩個腳，詳見 README 注意事項） |
+| TEC RPWM | `TEC_RPWM` | 26 | D3 | LEDC ch2 PWM 輸出 | 加熱方向 |
 | DS18B20 | `DS18B20_PIN` | 4 | **D12** | OneWire 雙向 | 3 顆並聯 + 4.7kΩ 上拉到 3.3V |
 | LED 燈帶 | `LED_PIN`（ledc ch4，5kHz 10-bit） | 13 | D7 | 數字/PWM OUT | **已裝機**：經 IRLZ44N 驅動 12V COB 燈帶 |
 | OLED SDA | — | 21 | SDA | I2C 雙向 | SSD1306 數據 |
@@ -83,8 +83,8 @@
 | 通道 | 宏 | 引腳 | 頻率 | 分辨率 | 範圍 | 寫函數 |
 |------|-----|------|------|--------|------|--------|
 | ch0 | `FAN_CH` | GPIO18 | 25000 Hz | 10-bit (`PWM_RES`) | 0~1023 | `setFan(s)`，輸入 0~255 然後 ×4 |
-| ch1 | `TEC_L_CH` | GPIO26 | 25000 Hz | 10-bit (`TEC_PWM_RES`) | 0~1023 | `setTec(cool,heat)` / `setTecPwm(power,isCool)` |
-| ch2 | `TEC_R_CH` | GPIO25 | 25000 Hz | 10-bit (`TEC_PWM_RES`) | 0~1023 | 同上 |
+| ch1 | `TEC_L_CH` | GPIO25 | 25000 Hz | 10-bit (`TEC_PWM_RES`) | 0~1023 | `setTec(cool,heat)` / `setTecPwm(power,isCool)` |
+| ch2 | `TEC_R_CH` | GPIO26 | 25000 Hz | 10-bit (`TEC_PWM_RES`) | 0~1023 | 同上 |
 
 ### 2.1 輸入語義
 
