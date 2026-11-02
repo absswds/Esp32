@@ -1235,7 +1235,7 @@ void setup() {
 
     // 盡力同步到相機（阻塞但不會影響按鈕響應）
     WiFiClient c;
-    if (c.connect(camIP, 81, camIPConfirmed ? 1000 : 200)) {   // 相機的 /light、/status 在 81 埠（80 埠只有串流）
+    if (c.connect(camIP, 80, camIPConfirmed ? 1000 : 200)) {
       String q = "";
       if (server.hasArg("ir"))  q += "ir=" + server.arg("ir");
       if (server.hasArg("led")) { if (q.length()) q += "&"; q += "led=" + server.arg("led"); }
