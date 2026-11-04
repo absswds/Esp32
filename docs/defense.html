@@ -283,10 +283,18 @@ var cheat=hero()
 +'<li><b>不能說的話。</b>「52% 是最優」、「能誘導蟄眠」、「所有情況都有保護」、「已經降到 15°C」。</li>'
 +'</ul>';
 
-var KEY="defense-cards-v3", mastered={};
+/* 「已掌握」按題目文字記，題目增刪後進度不會錯位 */
+var KEY="defense-cards-v4", mastered={};
+CARDS.forEach(function(c){c.id=c.q});
 try{mastered=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){mastered={}}
+try{
+  var old=localStorage.getItem("defense-cards-v3");
+  if(old&&!localStorage.getItem(KEY)){
+    var o=JSON.parse(old);Object.keys(o).forEach(function(k){if(CARDS[+k])mastered[CARDS[+k].id]=1});
+  }
+}catch(e){}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(mastered))}catch(e){}}
-CARDS.forEach(function(c,i){c.id=i});
+var BYID={};CARDS.forEach(function(c){BYID[c.id]=c});
 var view=document.getElementById("view"), tabs=document.getElementById("tabs");
 var cur="cheat";
 try{var h=(location.hash||"").slice(1); if(CATS.some(function(x){return x.id===h}))cur=h}catch(e){}
@@ -309,7 +317,7 @@ function progress(){
 }
 function cardEl(c){
   var d=document.createElement("div"); d.className="card"+(mastered[c.id]?" done":"");
-  var id="a"+c.id;
+  var id="a"+CARDS.indexOf(c);
   d.innerHTML='<button class="qbtn" aria-expanded="false" aria-controls="'+id+'"><span class="tag'+(c.c==="hard"?" hard":"")+'">'+TAGS[c.c]+'</span><span class="qt"></span><span class="chev" aria-hidden="true">›</span></button>'
    +'<div class="ans" id="'+id+'" hidden>'+c.a+'</div>'
    +'<div class="foot"><button class="mark" aria-pressed="'+!!mastered[c.id]+'">'+(mastered[c.id]?"已掌握":"標為已掌握")+'</button></div>';
@@ -340,18 +348,55 @@ function renderList(cat){
   document.getElementById("ex").onclick=function(){all(true)};
   document.getElementById("co").onclick=function(){all(false)};
 }
-var qpool=[], qi=0, qshow=false, qonly="all";
+/* 抽題：範圍（題型）→ 按固定順序切成幾個部分 → 每次只練一部分；做到哪裡存在本機，下次打開接著做 */
+var QKEY="defense-quiz-v1";
+var qpool=[], qi=0, qshow=false, qonly="all", qpart=0, qsize=8, qredo=false;
+function scope(){return CARDS.filter(function(c){return qonly==="all"||c.c===qonly})}
+function partCount(){return Math.max(1,Math.ceil(scope().length/qsize))}
+function partCards(k){return scope().slice(k*qsize,(k+1)*qsize)}
+function saveQuiz(){
+  try{localStorage.setItem(QKEY,JSON.stringify({only:qonly,part:qpart,size:qsize,redo:qredo,pool:qpool.map(function(c){return c.id}),qi:qi}))}catch(e){}
+}
+function loadQuiz(){
+  try{
+    var s=JSON.parse(localStorage.getItem(QKEY)||"null"); if(!s)return false;
+    qonly=s.only||"all";qsize=s.size||8;qpart=s.part||0;qredo=!!s.redo;
+    if(qpart>=partCount())qpart=0;
+    qpool=(s.pool||[]).map(function(id){return BYID[id]}).filter(Boolean);
+    qi=Math.min(s.qi||0,qpool.length);qshow=false;
+    return true;
+  }catch(e){return false}
+}
 function buildPool(){
-  qpool=CARDS.filter(function(c){return !mastered[c.id]&&(qonly==="all"||c.c===qonly)});
+  qpool=partCards(qpart).filter(function(c){return qredo||!mastered[c.id]});
   for(var i=qpool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=qpool[i];qpool[i]=qpool[j];qpool[j]=t}
-  qi=0;qshow=false;
+  qi=0;qshow=false;saveQuiz();
 }
 function rate(n){
   var c=qpool[qi]; if(!c)return;
   if(n===3){mastered[c.id]=1;save();progress()}
   else if(n===2){qpool.push(c)}
   else{qpool.splice(Math.min(qi+4,qpool.length),0,c)}
-  qi++;qshow=false;renderQuiz();
+  qi++;qshow=false;saveQuiz();renderQuiz();
+}
+function quizTools(){
+  var sel='font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)';
+  var opts='<option value="all">全部題型</option>'+["use","concept","project","judge","hard","extra"].map(function(k){
+    return '<option value="'+k+'"'+(qonly===k?" selected":"")+'>'+CATS.filter(function(x){return x.id===k})[0].name+'</option>'}).join("");
+  var parts="";
+  for(var k=0;k<partCount();k++){
+    var pc=partCards(k), d=pc.filter(function(c){return mastered[c.id]}).length;
+    parts+='<option value="'+k+'"'+(qpart===k?" selected":"")+'>第 '+(k+1)+' 部分（'+d+'/'+pc.length+' 已掌握）</option>';
+  }
+  var sizes=[5,8,10,15].map(function(n){return '<option value="'+n+'"'+(qsize===n?" selected":"")+'>每部分 '+n+' 題</option>'}).join("");
+  return '<div class="tools"><select id="sel" aria-label="題型" style="'+sel+'">'+opts+'</select>'
+   +'<select id="part" aria-label="部分" style="'+sel+'">'+parts+'</select>'
+   +'<select id="size" aria-label="每部分題數" style="'+sel+'">'+sizes+'</select></div>';
+}
+function bindTools(){
+  document.getElementById("sel").onchange=function(e){qonly=e.target.value;qpart=0;qredo=false;buildPool();renderQuiz()};
+  document.getElementById("part").onchange=function(e){qpart=+e.target.value;qredo=false;buildPool();renderQuiz()};
+  document.getElementById("size").onchange=function(e){qsize=+e.target.value;qpart=0;qredo=false;buildPool();renderQuiz()};
 }
 document.addEventListener("keydown",function(e){
   if(cur!=="quiz"||!qpool[qi])return;
@@ -359,37 +404,44 @@ document.addEventListener("keydown",function(e){
   else if(qshow&&"123".indexOf(e.key)>-1&&e.target.tagName!=="SELECT"){rate(+e.key)}
 });
 function renderQuiz(){
-  var opts='<option value="all">全部題型</option>'+["use","concept","project","judge","hard","extra"].map(function(k){
-    return '<option value="'+k+'"'+(qonly===k?" selected":"")+'>'+CATS.filter(function(x){return x.id===k})[0].name+'</option>'}).join("");
   if(!qpool.length||qi>=qpool.length){
-    view.innerHTML='<p class="lead">隨機出題，只抽還沒掌握的題。</p><div class="tools"><select id="sel" aria-label="題型" style="font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">'+opts+'</select></div>'
-     +'<div class="empty">'+(qpool.length?"這一輪抽完了。":"這個範圍沒有未掌握的題了。")+'</div><div class="row"><button class="btn" id="again">重新洗牌</button></div>';
-    document.getElementById("again").onclick=function(){buildPool();renderQuiz()};
-    document.getElementById("sel").onchange=function(e){qonly=e.target.value;buildPool();renderQuiz()};
+    var last=qpart>=partCount()-1;
+    view.innerHTML='<p class="lead">每次練一個部分，只抽還沒掌握的題；做到哪裡會自動記住。</p>'+quizTools()
+     +'<div class="empty">'+(qpool.length?"第 "+(qpart+1)+" 部分這一輪做完了。":"第 "+(qpart+1)+" 部分的題都掌握了。")+'</div>'
+     +'<div class="row">'+(last?'':'<button class="btn" id="next">下一部分</button>')
+     +'<button class="btn ghost" id="again">這部分再練一輪</button><button class="btn ghost" id="redo">連已掌握的也重練</button></div>';
+    if(!last)document.getElementById("next").onclick=function(){qpart++;qredo=false;buildPool();renderQuiz()};
+    document.getElementById("again").onclick=function(){qredo=false;buildPool();renderQuiz()};
+    document.getElementById("redo").onclick=function(){qredo=true;buildPool();renderQuiz()};
+    bindTools();
     return;
   }
   var c=qpool[qi];
-  view.innerHTML='<p class="lead">隨機出題，只抽還沒掌握的題。先自己開口說一遍（30 秒內），再看答案。電腦上：空格看答案，1 / 2 / 3 評分。「不會」的題幾題後再出現。</p>'
-   +'<div class="tools"><select id="sel" aria-label="題型" style="font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)">'+opts+'</select></div>'
-   +'<div class="quiz"><div class="meta">'+TAGS[c.c]+' · 第 '+(qi+1)+' / '+qpool.length+' 題</div><p class="q" id="qq"></p>'
+  view.innerHTML='<p class="lead">每次練一個部分，只抽還沒掌握的題；做到哪裡會自動記住，下次打開接著做。先自己開口說一遍（30 秒內），再看答案。電腦上：空格看答案，1 / 2 / 3 評分。「不會」的題幾題後再出現。</p>'
+   +quizTools()
+   +'<div class="quiz"><div class="meta">'+TAGS[c.c]+' · 第 '+(qpart+1)+' 部分 · 第 '+(qi+1)+' / '+qpool.length+' 題</div><p class="q" id="qq"></p>'
    +(qshow?'<div class="ans">'+c.a+'</div><div class="row"><button class="btn bad" id="nope">不會<kbd>1</kbd></button><button class="btn ghost" id="fuzzy">模糊<kbd>2</kbd></button><button class="btn ok" id="got">記住了<kbd>3</kbd></button></div>'
           :'<div class="row"><button class="btn" id="show">看答案</button><button class="btn ghost" id="skip">跳過</button></div>')
    +'</div>';
   document.getElementById("qq").textContent=c.q;
-  document.getElementById("sel").onchange=function(e){qonly=e.target.value;buildPool();renderQuiz()};
+  bindTools();
   if(qshow){
     document.getElementById("got").onclick=function(){rate(3)};
     document.getElementById("fuzzy").onclick=function(){rate(2)};
     document.getElementById("nope").onclick=function(){rate(1)};
   }else{
     document.getElementById("show").onclick=function(){qshow=true;renderQuiz()};
-    document.getElementById("skip").onclick=function(){qi++;renderQuiz()};
+    document.getElementById("skip").onclick=function(){qi++;saveQuiz();renderQuiz()};
   }
 }
+var quizReady=false;
 function render(){
   drawTabs();progress();
   if(cur==="cheat")view.innerHTML=cheat;
-  else if(cur==="quiz"){buildPool();renderQuiz()}
+  else if(cur==="quiz"){
+    if(!quizReady){quizReady=true;if(!loadQuiz())buildPool()}
+    renderQuiz();
+  }
   else renderList(cur);
 }
 render();
