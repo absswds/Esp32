@@ -92,6 +92,8 @@ h2:first-child{margin-top:0}
 header{border-bottom:0}
 header::after{content:"";display:block;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--cold),var(--warm))}
 nav{padding-bottom:12px}
+/* 電腦沒有觸控橫滑，分頁太多會被藏在右邊：寬螢幕改成換行顯示全部分頁 */
+@media (min-width:600px){nav{flex-wrap:wrap;overflow-x:visible}}
 .qbtn{font-size:1.02rem;padding:15px 16px;line-height:1.55}
 .card{transition:border-color .15s,box-shadow .15s}
 .card:hover{border-color:var(--cold)}
@@ -476,6 +478,7 @@ try{var h=(location.hash||"").slice(1); if(CATS.some(function(x){return x.id===h
 function count(cat){return CARDS.filter(function(c){return c.c===cat}).length}
 function drawTabs(){
   tabs.innerHTML="";
+  var sel=null;
   CATS.forEach(function(k){
     var b=document.createElement("button");
     b.setAttribute("role","tab"); b.setAttribute("aria-selected",k.id===cur);
@@ -483,7 +486,10 @@ function drawTabs(){
     b.innerHTML=k.name+(n?'<span class="n">'+n+'</span>':'');
     b.onclick=function(){cur=k.id;try{history.replaceState(null,"","#"+cur)}catch(e){};render();window.scrollTo(0,0)};
     tabs.appendChild(b);
+    if(k.id===cur)sel=b;
   });
+  /* 手機上把目前分頁捲到可見位置 */
+  if(sel&&tabs.scrollWidth>tabs.clientWidth)tabs.scrollLeft=sel.offsetLeft-tabs.offsetLeft-16;
 }
 function progress(){
   var d=CARDS.filter(function(c){return mastered[c.id]}).length;
