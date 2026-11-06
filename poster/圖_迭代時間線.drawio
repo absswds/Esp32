@@ -1,0 +1,155 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="drawio">
+  <diagram name="迭代時間線" id="迭代時間線">
+    <mxGraphModel grid="0" page="1" pageWidth="2060" pageHeight="450" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="c1" value="P1 無銅片" style="html=1;whiteSpace=wrap;fillColor=#64748B1A;strokeColor=#64748B;fontColor=#64748B;fontFamily=Microsoft JhengHei;fontSize=22;fontStyle=1;rounded=1;arcSize=40;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="38.0" y="20" width="984.0" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="P2 有銅片" style="html=1;whiteSpace=wrap;fillColor=#EA580C1A;strokeColor=#EA580C;fontColor=#EA580C;fontFamily=Microsoft JhengHei;fontSize=22;fontStyle=1;rounded=1;arcSize=40;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1038.0" y="20" width="317.3333333333333" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="P3 加保溫" style="html=1;whiteSpace=wrap;fillColor=#2563EB1A;strokeColor=#2563EB;fontColor=#2563EB;fontFamily=Microsoft JhengHei;fontSize=22;fontStyle=1;rounded=1;arcSize=40;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1371.3333333333333" y="20" width="317.3333333333333" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="軟件完善" style="html=1;whiteSpace=wrap;fillColor=#7C3AED1A;strokeColor=#7C3AED;fontColor=#7C3AED;fontFamily=Microsoft JhengHei;fontSize=22;fontStyle=1;rounded=1;arcSize=40;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1704.6666666666665" y="20" width="317.3333333333333" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="" style="edgeStyle=none;html=1;endArrow=block;endFill=1;endSize=8;strokeWidth=8;strokeColor=#CBD5E1;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="40" y="150" as="sourcePoint" />
+            <mxPoint x="2030" y="150" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c6" value="07-22" style="html=1;whiteSpace=wrap;fillColor=#64748B;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="118.66666666666666" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c7" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#64748B;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="196.66666666666666" y="172" as="sourcePoint" />
+            <mxPoint x="196.66666666666666" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c8" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="42.0" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c9" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0UxRDhFQyIgZD0iTTIgNmE0IDQgMCAwIDEgNC00aDIwYTQgNCAwIDAgMSA0IDR2MjBjMCAxLjQ4LS44MDQgMi43NzMtMiAzLjQ2NUwyNi41NTQgMjlhNCA0IDAgMCAwLTMuMDE0LjIzTDIyIDMwaC0zbC0zLTEuNWwtMyAxLjVoLTNsLTEuNTQtLjc3QTQgNCAwIDAgMCA1LjQ0NiAyOUw0IDI5LjQ2NUE0IDQgMCAwIDEgMiAyNnoiLz48cGF0aCBmaWxsPSIjQjRBQ0JDIiBkPSJNMTAgMTF2MTBIMnYxaDh2OGgxdi04aDEwdjhoMXYtOGg4di0xaC04VjExaDh2LTFoLThWMmgtMXY4SDExVjJoLTF2OEgydjF6bTEgMGgxMHYxMEgxMXoiLz48cGF0aCBmaWxsPSIjMDBEMjZBIiBkPSJNNiAzMGg0VjEwLjIxNEMxMCA5LjU0MiA5LjQ1MyA5IDguNzc0IDlINS4yMjZDNC41NDcgOSA0IDkuNTQyIDQgMTAuMjEzdjE5LjI1MmMuNTg4LjM0IDEuMjcxLjUzNSAyIC41MzUiLz48cGF0aCBmaWxsPSIjRjcwQThEIiBkPSJNMTcuNzc0IDE3aC0zLjU0OGMtLjY3OSAwLTEuMjI2LjU0Mi0xLjIyNiAxLjIxNFYzMGg2VjE4LjIxNGMwLS42NzItLjU0Ny0xLjIxNC0xLjIyNi0xLjIxNCIvPjxwYXRoIGZpbGw9IiMwMEE2RUQiIGQ9Ik0yMiAzMGg0Yy43MjkgMCAxLjQxMi0uMTk1IDItLjUzNVY3LjIwOUMyOCA2LjUzOSAyNy40NTMgNiAyNi43NzQgNmgtMy41NDhDMjIuNTQ3IDYgMjIgNi41NCAyMiA3LjIwOXoiLz48L2c+PC9zdmc+;" vertex="1" parent="1">
+          <mxGeometry x="164.66666666666666" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c10" value="&lt;b&gt;TEC 選型&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50.0" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c11" value="12703 勝出&lt;br&gt;功耗減半、加熱快 14%" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50.0" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="c12" value="07-23" style="html=1;whiteSpace=wrap;fillColor=#64748B;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="452.0" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c13" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#64748B;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="530.0" y="172" as="sourcePoint" />
+            <mxPoint x="530.0" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c14" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="375.33333333333337" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c15" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0I0QUNCQyIgZD0iTTEyLjg0NyAzLjgzNEEyIDIgMCAwIDEgMTQuODQgMmgyLjMyYTIgMiAwIDAgMSAxLjk5MyAxLjgzNGwuMjM1IDIuODI1YS41LjUgMCAwIDAgLjgyMS4zNGwyLjE2NC0xLjgzMWEyIDIgMCAwIDEgMi43MDYuMTEybDEuNjQgMS42NGEyIDIgMCAwIDEgLjExMyAyLjcwN2wtMS44MyAyLjE2M2EuNS41IDAgMCAwIC4zNC44MjJsMi44MjQuMjM1QTIgMiAwIDAgMSAzMCAxNC44NHYyLjMyYTIgMiAwIDAgMS0xLjgzNCAxLjk5M2wtMi44MjUuMjM1YS41LjUgMCAwIDAtLjM0LjgyMWwxLjgzMSAyLjE2NGEyIDIgMCAwIDEtLjExMiAyLjcwNmwtMS42NCAxLjY0YTIgMiAwIDAgMS0yLjcwNy4xMTNsLTIuMTY0LTEuODNhLjUuNSAwIDAgMC0uODIuMzRsLS4yMzYgMi44MjRBMiAyIDAgMCAxIDE3LjE2IDMwaC0yLjMyYTIgMiAwIDAgMS0xLjk5My0xLjgzNGwtLjIzNS0yLjgyNWEuNS41IDAgMCAwLS44MjItLjM0bC0yLjE2MyAxLjgzMWEyIDIgMCAwIDEtMi43MDYtLjExMmwtMS42NC0xLjY0YTIgMiAwIDAgMS0uMTEzLTIuNzA3bDEuODMtMi4xNjRhLjUuNSAwIDAgMC0uMzQtLjgybC0yLjgyNC0uMjM2QTIgMiAwIDAgMSAyIDE3LjE2di0yLjMyYTIgMiAwIDAgMSAxLjgzNC0xLjk5M2wyLjgyNS0uMjM1YS41LjUgMCAwIDAgLjM0LS44MjJMNS4xNjggOS42MjhBMiAyIDAgMCAxIDUuMjggNi45MmwxLjY0LTEuNjRhMiAyIDAgMCAxIDIuNzA3LS4xMTNsMi4xNjMgMS44M2EuNS41IDAgMCAwIC44MjItLjM0ek0yMSAxNmE1IDUgMCAxIDAtMTAgMGE1IDUgMCAwIDAgMTAgMCIvPjxwYXRoIGZpbGw9IiM5OThFQTQiIGQ9Ik0yNCAxNmE4IDggMCAxIDEtMTYgMGE4IDggMCAwIDEgMTYgMG0tMy41IDBhNC41IDQuNSAwIDEgMC05IDBhNC41IDQuNSAwIDAgMCA5IDAiLz48cGF0aCBmaWxsPSIjQ0RDNEQ2IiBkPSJNMTAuNSAxNmE1LjUgNS41IDAgMSAxIDExIDBhNS41IDUuNSAwIDAgMS0xMSAwTTIxIDE2YTUgNSAwIDEgMC0xMCAwYTUgNSAwIDAgMCAxMCAwIi8+PC9nPjwvc3ZnPg==;" vertex="1" parent="1">
+          <mxGeometry x="498.0" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c16" value="&lt;b&gt;改開關控制 + 降壓試驗&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="383.33333333333337" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c17" value="8.5 V 製冷慢 24%&lt;br&gt;→ 維持 12 V" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="383.33333333333337" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="c18" value="07-24" style="html=1;whiteSpace=wrap;fillColor=#64748B;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="785.3333333333333" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c19" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#64748B;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="863.3333333333333" y="172" as="sourcePoint" />
+            <mxPoint x="863.3333333333333" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c20" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#64748B;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="708.6666666666666" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c21" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0Y0RjRGNCIgZD0iTTIxLjc0IDE2LjA4TDguODMgMy4xN2E0LjAxIDQuMDEgMCAwIDAtNS42NiAwYTQuMDEgNC4wMSAwIDAgMCAwIDUuNjZsMTIuOTEgMTIuOTFjLS4zOSAyLjE4LjI2IDQuNSAxLjk0IDYuMThhNy4wMDcgNy4wMDcgMCAwIDAgOS45IDBhNy4wMDcgNy4wMDcgMCAwIDAgMC05LjljLTEuNjgtMS42OC00LTIuMzItNi4xOC0xLjk0Ii8+PHBhdGggZmlsbD0iI0Y4MzEyRiIgZD0iTTQuNTkgNy40MmMtLjc4LS43OC0uNzgtMi4wNSAwLTIuODNzMi4wNC0uNzggMi44MyAwbDEzLjcyNCAxMy43MjRhNSA1IDAgMSAxLTIuODMgMi44M3oiLz48cGF0aCBmaWxsPSIjMDAwIiBkPSJNMTAuMjMgNC42TDguMTEgNi43MmEuOTk2Ljk5NiAwIDEgMCAxLjQxIDEuNDFsMi4xMi0yLjEyem0yLjEyIDYuMzdsMi4xMi0yLjEybDEuNDEgMS40MWwtMi4xMiAyLjEyYS45OTYuOTk2IDAgMSAxLTEuNDEtMS40MW00LjI0IDQuMjRsMi4xMi0yLjEybDEuNDEgMS40MUwxOCAxNi42MmEuOTk2Ljk5NiAwIDEgMS0xLjQxLTEuNDEiLz48cGF0aCBmaWxsPSIjRkY4Njg3IiBkPSJNMjQuOTcgMjMuOTdhMiAyIDAgMSAwIDAtNGEyIDIgMCAwIDAgMCA0Ii8+PC9nPjwvc3ZnPg==;" vertex="1" parent="1">
+          <mxGeometry x="831.3333333333333" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c22" value="&lt;b&gt;首次 1 小時長測&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="716.6666666666666" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c23" value="出風口只到 24.07 °C&lt;br&gt;→ 熱端散熱是瓶頸" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="716.6666666666666" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="c24" value="08-01" style="html=1;whiteSpace=wrap;fillColor=#EA580C;strokeColor=#EA580C;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="1118.6666666666665" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c25" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#EA580C;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1196.6666666666665" y="172" as="sourcePoint" />
+            <mxPoint x="1196.6666666666665" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c26" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#EA580C;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1041.9999999999998" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c27" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHBhdGggZmlsbD0iIzAwQTZFRCIgZD0ibTIzLjU2NCAxOC45bDUuMTEyLTEuMzZjLjU1My0uMTUgMS4xMzcuMTUgMS4yODguNzFjLjE1LjU2LS4xODIgMS4xMi0uNzM1IDEuMjdsLTMuMTEuODNsMi4yMjQgMS4yN2MuNDgzLjI4LjY1NS44OS4zNzMgMS4zN3MtLjg5Ni42NS0xLjM3OS4zN2wtMi4yMjQtMS4yN2wuODM2IDMuMDljLjE1LjU2LS4xNzEgMS4xMi0uNzM1IDEuMjdhMS4wNCAxLjA0IDAgMCAxLTEuMjc4LS43M2wtMS4zNjgtNS4wOGwtMi4zMTUtMS4zM2E1LjA3IDUuMDcgMCAwIDEtMi43NDcgMS41OXYyLjYzbDMuNzQ0IDMuNzJjLjQwMi40LjQwMiAxLjA2IDAgMS40NmMtLjQwMy40LTEuMDY3LjQtMS40NyAwbC0yLjI3NC0yLjI2VjI5YTEuMDA2IDEuMDA2IDAgMCAxLTIuMDEyIDB2LTIuNTRsLTIuMjc0IDIuMjZjLS40MDMuNC0xLjA2Ny40LTEuNDcgMGExLjAzNCAxLjAzNCAwIDAgMSAwLTEuNDZsMy43NDQtMy43MnYtMi42M2MtMS4wOTctLjIyLTIuMDMzLS44LTIuNzQ3LTEuNTlsLTIuMzA1IDEuMzJsLTEuMzY4IDUuMDhjLS4xNTEuNTUtLjcyNS44OC0xLjI3OC43M2ExLjA0IDEuMDQgMCAwIDEtLjczNS0xLjI3bC44MzYtMy4wOWwtMi4yMjQgMS4yOEExLjAyIDEuMDIgMCAwIDEgNC4yOTQgMjNhLjk3Ni45NzYgMCAwIDEgLjM2My0xLjM1bDIuMjIzLTEuMjhsLTMuMTA5LS44M2ExLjA0IDEuMDQgMCAwIDEtLjczNS0xLjI3Yy4xNTEtLjU1LjcyNS0uODggMS4yNzgtLjczbDUuMTEyIDEuMzZsMi4zMTUtMS4zM2E0LjggNC44IDAgMCAxLS4yODItMS41N2MwLS41NS4xMS0xLjA4LjI4Mi0xLjU1bC0yLjMxNS0xLjMzbC01LjExMiAxLjM2YTEuMDQgMS4wNCAwIDAgMS0xLjI3OC0uNzNjLS4xNS0uNTYuMTgyLTEuMTIuNzM1LTEuMjdsMy4xMS0uODNsLTIuMjI0LTEuMjhBMS4wMDQgMS4wMDQgMCAwIDEgNC4yOTQgOWMuMjcyLS40OC44OTYtLjY0IDEuMzY5LS4zN2wyLjIzNCAxLjI4bC0uODM2LTMuMDljLS4xNS0uNTUuMTgyLTEuMTEuNzM1LTEuMjZzMS4xMTcuMTggMS4yNjguNzNsMS4zNjggNS4wOGwyLjMwNSAxLjMyYTUuMDcgNS4wNyAwIDAgMSAyLjc0Ny0xLjU5VjguNDdMMTEuNzQgNC43NWExLjAzNCAxLjAzNCAwIDAgMSAwLTEuNDZhMS4wNSAxLjA1IDAgMCAxIDEuNDY5IDBsMi4yNzQgMi4yNlYzYTEuMDA2IDEuMDA2IDAgMCAxIDIuMDEyIDB2Mi41NWwyLjI3NC0yLjI2YTEuMDUgMS4wNSAwIDAgMSAxLjQ3IDBjLjQwMi40LjQwMiAxLjA2IDAgMS40NmwtMy43NDQgMy43MnYyLjYzYTUuMDUgNS4wNSAwIDAgMSAyLjczNyAxLjU4bDIuMzE0LTEuMzNsMS4zNjktNS4wOGMuMTUxLS41NS43MjQtLjg4IDEuMjc4LS43M2MuNTUzLjE1Ljg4Ni43Mi43MzUgMS4yN2wtLjgzNiAzLjA5bDIuMjI0LTEuMjdhMS4wMiAxLjAyIDAgMCAxIDEuMzc5LjM3YTEgMSAwIDAgMS0uMzYzIDEuMzZsLTIuMjIzIDEuMjdsMy4xMDkuODNjLjU1My4xNS44ODUuNzIuNzM0IDEuMjdjLS4xNS41NS0uNzI0Ljg4LTEuMjc3LjczbC01LjExMi0xLjM2bC0yLjMxNCAxLjMzYy4xNy40OS4yODEgMS4wMi4yODEgMS41N3MtLjExIDEuMDctLjI4MSAxLjU3ek0xOS41MDkgMTZjMC0xLjY1Ny0xLjM1Mi0zLTMuMDE5LTNhMy4wMSAzLjAxIDAgMCAwLTMuMDE5IDNjMCAxLjY1NyAxLjM1MiAzIDMuMDE5IDNhMy4wMSAzLjAxIDAgMCAwIDMuMDE5LTMiLz48L3N2Zz4=;" vertex="1" parent="1">
+          <mxGeometry x="1164.6666666666665" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c28" value="&lt;b&gt;加銅片 + 風扇降速&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1049.9999999999998" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c29" value="出風口&lt;br&gt;&lt;b style='font-size:27px;color:#EA580C'&gt;24.07 → 14.87 °C&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1049.9999999999998" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="c30" value="08-22 ~ 31" style="html=1;whiteSpace=wrap;fillColor=#2563EB;strokeColor=#2563EB;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="1452.0" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c31" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#2563EB;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1530.0" y="172" as="sourcePoint" />
+            <mxPoint x="1530.0" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c32" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#2563EB;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1375.3333333333333" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c33" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0YzQzA3QiIgZD0iTTE1LjM1IDIuMTQzYy4zMi0uMTkuNzEtLjE5IDEuMDIgMGwxMC45MiA2LjY0Yy4yNi4xNi40Mi40NS40Mi43NUwxNS44NiAxNy41TDQgOS42MzJ2LS4xYzAtLjMuMTYtLjU5LjQyLS43NHoiLz48cGF0aCBmaWxsPSIjRkZDRTdDIiBkPSJtMTUuODU2IDE2LjI0NmwxMS4zNi02LjlhLjMyOC4zMjggMCAwIDEgLjQ5Ni4yODJ2MTIuMzRhMS43MyAxLjczIDAgMCAxLS44MyAxLjQ4bC0xMC42NCA2LjQ2YS4zLjMgMCAwIDEtLjA4Ny4wM2EuMy4zIDAgMCAxLS4wODMuMDExYS45LjkgMCAwIDEtLjY4Mi0uMDgzaC4wMDZMMTMgMTl6Ii8+PHBhdGggZmlsbD0iI0UxOTc0NyIgZD0iTTE1Ljg2IDI5LjYyMnYtMTMuMzdsLTExLjM1LTYuOWEuMzMxLjMzMSAwIDAgMC0uNTEuMjh2MTIuMzRjMCAuNjEuMzIgMS4xNy44MyAxLjQ4bDEwLjU3IDYuNDJhLjMuMyAwIDAgMCAuNDYtLjI1Ii8+PHBhdGggZmlsbD0iI0QzRDNEMyIgZD0iTTE0LjUgMjYuNzgydi0xLjk2YzAtLjIzLS4xMi0uNDQtLjMxLS41NmwtMi44LTEuNjljLS4xOS0uMTEtLjQzLjAyLS40My4yNHYxLjk2YzAgLjIzLjEyLjQ0LjMxLjU2bDIuOCAxLjY5Yy4xOS4xMS40My0uMDIuNDMtLjI0Ii8+PHBhdGggZmlsbD0iIzhDNTU0MyIgZD0iTTExLjc2IDE2LjU1M3YtNC41NmwtMy4yOC0uMjJ2My4xNmMwIC4xLjA1LjIuMTQuMjZsMi42OCAxLjYzYy4yLjExLjQ2LS4wMy40Ni0uMjciLz48cGF0aCBmaWxsPSIjQTU2OTUzIiBkPSJtMjAuMzQgNC41NjNsLTExLjg2IDcuMjFsMy4yOCAybDExLjg2LTcuMnoiLz48L2c+PC9zdmc+;" vertex="1" parent="1">
+          <mxGeometry x="1498.0" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c34" value="&lt;b&gt;加 XPS 保溫、試鋁板&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1383.3333333333333" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c35" value="條件混雜、巢穴未降&lt;br&gt;→ 如實記錄" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1383.3333333333333" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="c36" value="09-19 ~ 10-04" style="html=1;whiteSpace=wrap;fillColor=#7C3AED;strokeColor=#7C3AED;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=18;fontStyle=1;rounded=1;arcSize=50;" vertex="1" parent="1">
+          <mxGeometry x="1785.3333333333333" y="130" width="156" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="c37" value="" style="edgeStyle=none;html=1;endArrow=none;endFill=1;endSize=8;strokeWidth=3;strokeColor=#7C3AED;rounded=1;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1863.3333333333333" y="172" as="sourcePoint" />
+            <mxPoint x="1863.3333333333333" y="196" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="c38" value="" style="html=1;whiteSpace=wrap;fillColor=#FFFFFF;strokeColor=#7C3AED;fontColor=#FFFFFF;fontFamily=Microsoft JhengHei;fontSize=16;fontStyle=1;rounded=1;arcSize=5;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1708.6666666666665" y="198" width="309.3333333333333" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="c39" value="" style="shape=image;aspect=fixed;imageAspect=0;image=data:image/svg+xml,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PGcgZmlsbD0ibm9uZSI+PHBhdGggZmlsbD0iI0QzRDNEMyIgZD0ibTI4IDIwbC0xMi0xbC0xMiAxbC0xLjk4IDguODkxYy0uMTEuNzY2Ljk3NS42MDkgMS40OC42MDloMjVjLjUwNSAwIDEuNTkuMTU3IDEuNDgtLjYwOXoiLz48cGF0aCBmaWxsPSIjNzE2N0E0IiBkPSJNMjcgMkg1Yy0uNTUgMC0xIC40NS0xIDF2MTYuOTloMjRWM2MwLS41NS0uNDUtMS0xLTEiLz48cGF0aCBmaWxsPSIjMjZDOUZDIiBkPSJNNSAxOC43NFYzLjI1YzAtLjE0LjExLS4yNS4yNS0uMjVoMjEuNWMuMTQgMCAuMjUuMTEuMjUuMjV2MTUuNDljMCAuMTQtLjExLjI1LS4yNS4yNUg1LjI1Yy0uMTQgMC0uMjUtLjExLS4yNS0uMjUiLz48cGF0aCBmaWxsPSIjOUI5QjlCIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Im0yNy4yNyAyMS4yOGwuNzIgMy4yNWEuMzguMzggMCAwIDEtLjM3LjQ2SDQuMzhjLS4yNCAwLS40Mi0uMjMtLjM3LS40NmwuNzItMy4yNWMuMDQtLjE3LjE5LS4yOS4zNy0uMjloMjEuOGMuMTggMCAuMzMuMTIuMzcuMjlNOC4xODYgMjQuNUg2Ljc1M2wuMTI1LS43NUg4LjI4em0xLjkzOCAwSDguNjlsLjA5NC0uNzVoMS40MDR6bTEuODM4IDBoLTEuMzM2bC4wNjItLjc1aDEuMzA2em0xLjg1IDBoLTEuMzVsLjAzMi0uNzVoMS4zNXptMS45MzggMGgtMS40MzdsLjAzMS0uNzVoMS40MDZ6bTEuOTM3IDBIMTYuMjV2LS43NWgxLjQwNnptMS44NSAwaC0xLjM1bC0uMDMtLjc1aDEuMzQ5em0xLjgzNyAwaC0xLjMzNmwtLjAzMi0uNzVoMS4zMDZ6bTEuOTM3IDBoLTEuNDM1bC0uMDYzLS43NWgxLjQwNHptMS45MzYgMGgtMS40MzNsLS4wOTMtLjc1aDEuNHptMS43NTMgMGgtMS4yNDdsLS4xMjUtLjc1aDEuMjQ3em0tLjMzMy0ybC4xMjUuNzVoLTEuMjQ3bC0uMTI1LS43NXptLS4xNjctMWwuMDgzLjVoLTEuMjQ2bC0uMDg0LS41em0tMy4wNiAwaDEuMzA3bC4wODMuNWgtMS4zMjh6bS0xLjgxNCAwaDEuMzFsLjA2Mi41aC0xLjMzem0tMS43MTMgMGgxLjIxMWwuMDQyLjVoLTEuMjMzem0tMS44NSAwaDEuMzVsLjAyLjVoLTEuMzV6bS0xLjgxMyAwaDEuMzEybC4wMjEuNUgxNi4yNXptLTEuODEyIDBoMS4zMTJ2LjVoLTEuMzMzem0tMS44NSAwaDEuMzVsLS4wMjIuNWgtMS4zNXptLTEuNzEyIDBoMS4yMTFsLS4wMi41aC0xLjIzM3ptLTEuODEyIDBoMS4zMWwtLjA0Mi41aC0xLjMzem0tMS44MSAwSDguNTZsLS4wNjMuNUg3LjE3em0tMS43NTQgMGgxLjI0N2wtLjA4NC41SDUuNDE3em0tLjI5MiAxLjc1bC4xMjUtLjc1SDYuNThsLS4xMjUuNzV6TTUgMjQuNWwuMTI1LS43NWgxLjI0N2wtLjEyNS43NXptMjAuMDM4LTEuMjVsLS4xMjUtLjc1aC0xLjM0OWwuMDk0Ljc1em0tMS44ODQgMGwtLjA5My0uNzVoLTEuMzUybC4wNjMuNzV6bS0xLjg4NCAwbC0uMDYyLS43NWgtMS4yNTRsLjAzMi43NXptLTEuNzg1IDBsLS4wMzEtLjc1aC0xLjM1bC4wMzIuNzV6bS0xLjg1IDBsLS4wMzEtLjc1SDE2LjI1di43NXpNNy4wODcgMjIuNWwtLjEyNS43NWgxLjM4bC4wOTQtLjc1em0xLjg1MiAwbC0uMDkzLjc1aDEuMzgybC4wNjMtLjc1em0xLjg1NCAwbC0uMDYzLjc1aDEuMjg0bC4wMzItLjc1em0xLjc1MyAwbC0uMDMxLjc1aDEuMzVsLjAzLS43NXptMS44NSAwbC0uMDMxLjc1aDEuMzg1di0uNzV6IiBjbGlwLXJ1bGU9ImV2ZW5vZGQiLz48cGF0aCBmaWxsPSIjOUI5QjlCIiBkPSJNMjkuMDkgMjlhLjkuOSAwIDAgMCAuOC0uNDlsLjA5LjM4bC4wMDMuMDIzQS45MTMuOTEzIDAgMCAxIDI5LjA5IDMwSDIuOTFjLS41IDAtLjkxLS40MS0uOTEtLjkxYzAtLjA3LjAxLS4xMy4wMy0uMTlsLjA4LS4zOGMuMTUuMjguNDUuNDguOC40OHptLTE4LjI3LTEuMDFoMTAuMzZjLjE2IDAgLjI4LS4xNS4yNC0uMzFsLS4zOC0xLjVhLjI1NS4yNTUgMCAwIDAtLjI0LS4xOWgtOS42Yy0uMTEgMC0uMjEuMDgtLjI0LjE5bC0uMzggMS41Yy0uMDQuMTYuMDguMzEuMjQuMzEiLz48L2c+PC9zdmc+;" vertex="1" parent="1">
+          <mxGeometry x="1831.3333333333333" y="208" width="64" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="c40" value="&lt;b&gt;BME680・防結露・斷電恢復&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=22;fontColor=#1E293B;align=center;verticalAlign=middle;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1716.6666666666665" y="276" width="293.3333333333333" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="c41" value="單元測試&lt;br&gt;&lt;b style='font-size:27px;color:#7C3AED'&gt;37 → 41 項&lt;/b&gt;" style="text;html=1;whiteSpace=wrap;fontFamily=Microsoft JhengHei;fontSize=19;fontColor=#475569;align=center;verticalAlign=top;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1716.6666666666665" y="326" width="293.3333333333333" height="96" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
