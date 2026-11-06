@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>蟄眠箱答辯卡</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&family=Noto+Serif+TC:wght@600;900&display=swap">
+<style>
+/* Layout: sticky bar with tabs on top, one centered 720px column of tap-to-reveal question cards; the first tab is a one-screen cheat sheet. */
+:root{
+  --bg:#f1f5f6; --surface:#ffffff; --ink:#12232b; --muted:#5a6d75; --line:#d5e0e3;
+  --cold:#0b6f7c; --cold-soft:#dcf0f2; --warm:#b4400f; --warm-soft:#fbe7dc; --ok:#2f7d4f; --ok-soft:#e0f2e7;
+  --hero-bg:#0a3a42; --hero-fg:#eaf5f6; --hero-mute:#9fc0c6; --h-warm:#ff9a63; --h-cold:#5cc4d2; --h-mid:#c9d6d9;
+  --f-display:"Noto Serif TC","Songti TC",serif; --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif; --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0d171b; --surface:#152329; --ink:#e4eef0; --muted:#8fa6ae; --line:#27393f;
+  --cold:#5cc4d2; --cold-soft:#12363c; --warm:#ff9a63; --warm-soft:#3a2418; --ok:#6fcf93; --ok-soft:#173225; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d171b; --surface:#152329; --ink:#e4eef0; --muted:#8fa6ae; --line:#27393f;
+  --cold:#5cc4d2; --cold-soft:#12363c; --warm:#ff9a63; --warm-soft:#3a2418; --ok:#6fcf93; --ok-soft:#173225; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.wrap{max-width:720px;margin:0 auto}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);padding:14px 0 0;border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-weight:900;font-size:1.35rem;margin:0;letter-spacing:.02em}
+.prog{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:4px;background:var(--line);border-radius:2px;margin:8px 0 10px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--cold);transition:width .3s}
+nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:.875rem;padding:5px 13px;border-radius:999px;cursor:pointer;white-space:nowrap}
+nav button[aria-selected="true"]{background:var(--cold);border-color:var(--cold);color:var(--bg);font-weight:700}
+nav button .n{font-family:var(--f-mono);font-size:.72rem;opacity:.75;margin-left:5px}
+button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid var(--cold);outline-offset:2px}
+
+main{padding-top:20px}
+.lead{color:var(--muted);font-size:.9rem;margin:0 0 16px}
+h2{font-family:var(--f-display);font-weight:600;font-size:1.1rem;margin:28px 0 10px;text-wrap:balance}
+h2:first-child{margin-top:0}
+.say{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--cold);border-radius:6px;padding:14px 16px;margin:0 0 10px}
+.say small{display:block;font-family:var(--f-mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--cold);margin-bottom:2px}
+.say p{margin:0}
+.nums{width:100%;border-collapse:collapse;font-size:.9rem}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:6px}
+.nums th,.nums td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+.nums tr:last-child td{border-bottom:0}
+.nums th{font-size:.75rem;color:var(--muted);font-weight:500}
+.nums td.v{font-family:var(--f-mono);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--cold)}
+.nums td.v.w{color:var(--warm)}
+.risk{background:var(--warm-soft);border-radius:6px;padding:4px 16px;margin:0}
+.risk li{margin:10px 0 10px 1.1em;padding-left:2px}
+.risk b{color:var(--warm)}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:0 0 10px}
+.card.done{border-color:var(--ok)}
+.qbtn{width:100%;display:flex;gap:10px;align-items:flex-start;text-align:left;background:none;border:0;color:inherit;font:inherit;font-weight:500;padding:13px 14px;cursor:pointer}
+.tag{flex:none;font-family:var(--f-mono);font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:4px;background:var(--cold-soft);color:var(--cold);margin-top:5px}
+.tag.hard{background:var(--warm-soft);color:var(--warm)}
+.qt{flex:1;min-width:0}
+.chev{flex:none;color:var(--muted);transition:transform .2s;margin-top:2px}
+.qbtn[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.ans{padding:0 14px 14px 14px;border-top:1px dashed var(--line);margin:0 14px;padding:12px 0 6px;font-size:.95rem}
+.ans p{margin:0 0 8px}
+.ans ul{margin:0 0 8px;padding-left:1.2em}
+.ans .careful{background:var(--warm-soft);color:var(--ink);border-radius:5px;padding:6px 10px;font-size:.88rem;margin:8px 0 0}
+.ans .careful b{color:var(--warm)}
+.ans .plain{border-left:3px solid var(--cold);padding-left:10px;color:var(--ink)}
+.ans .plain b{color:var(--cold)}
+.foot{display:flex;justify-content:flex-end;padding:0 14px 12px}
+.mark{font:inherit;font-size:.8rem;border:1px solid var(--line);background:none;color:var(--muted);padding:3px 12px;border-radius:999px;cursor:pointer}
+.mark[aria-pressed="true"]{background:var(--ok-soft);border-color:var(--ok);color:var(--ok);font-weight:700}
+.tools{display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap}
+.tools button{font:inherit;font-size:.82rem;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:4px 12px;border-radius:6px;cursor:pointer}
+
+.quiz{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px 20px;text-align:center}
+.quiz .meta{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);margin-bottom:12px}
+.quiz .q{font-family:var(--f-display);font-weight:600;font-size:1.25rem;line-height:1.5;margin:0 0 18px;text-wrap:balance}
+.quiz .ans{text-align:left;border:0;margin:0 0 16px;padding:14px;background:var(--bg);border-radius:6px}
+.row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.btn{font:inherit;font-weight:700;border:1px solid var(--cold);background:var(--cold);color:var(--bg);padding:8px 20px;border-radius:6px;cursor:pointer}
+.btn.ghost{background:none;color:var(--cold)}
+.btn.ok{background:var(--ok);border-color:var(--ok)}
+.empty{color:var(--muted);text-align:center;padding:32px 0}
+
+/* v2 */
+.wrap{max-width:760px}
+header{border-bottom:0}
+header::after{content:"";display:block;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--cold),var(--warm))}
+nav{padding-bottom:12px}
+/* 電腦沒有觸控橫滑，分頁太多會被藏在右邊：寬螢幕改成換行顯示全部分頁 */
+@media (min-width:600px){nav{flex-wrap:wrap;overflow-x:visible}}
+.qbtn{font-size:1.02rem;padding:15px 16px;line-height:1.55}
+.card{transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:var(--cold)}
+.ans{font-size:1rem;line-height:1.75}
+.hero{background:var(--hero-bg);color:var(--hero-fg);border-radius:12px;padding:24px 20px 20px;margin:0 0 26px}
+.hero .eyebrow{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.1em;color:var(--hero-mute);margin:0 0 8px}
+.hero .big{font-family:var(--f-display);font-weight:900;font-size:clamp(1.55rem,6.5vw,2.1rem);line-height:1.3;margin:0 0 6px;text-wrap:balance}
+.hero .big em{font-style:normal;color:var(--h-cold)}
+.hero .big em.w{color:var(--h-warm)}
+.hero .sub{color:var(--hero-mute);font-size:.9rem;margin:0 0 22px}
+.thermo{position:relative;height:310px;margin:0 0 12px}
+.thermo .tr{position:absolute;left:44px;top:0;bottom:0;width:10px;border-radius:5px;background:linear-gradient(to bottom,var(--h-warm),#8a9ca1 50%,var(--h-cold))}
+.thermo .mk{position:absolute;left:40px;right:0;transform:translateY(-50%);display:flex;align-items:center;gap:14px}
+.thermo .dot{flex:none;width:18px;height:18px;border-radius:50%;background:var(--hero-bg);border:3px solid var(--c)}
+.thermo .lb{font-size:.92rem;line-height:1.4;min-width:0}
+.thermo .lb b{font-family:var(--f-mono);font-size:1.02rem;color:var(--c);font-variant-numeric:tabular-nums;margin-right:6px}
+.thermo .lb span{color:var(--hero-mute);font-size:.82rem;display:block}
+.thermo .brace{position:absolute;left:24px;width:10px;border:2px solid var(--h-warm);border-right:0;border-radius:6px 0 0 6px}
+.thermo .gap{position:absolute;left:0;width:18px;writing-mode:vertical-rl;text-align:center;font-size:.8rem;font-weight:700;color:var(--h-warm);transform:translateY(-50%)}
+.hero .foot2{font-family:var(--f-mono);font-size:.7rem;color:var(--hero-mute);margin:0}
+.twin{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 10px}
+.twin div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.twin small{display:block;font-family:var(--f-mono);font-size:.7rem;color:var(--muted)}
+.twin b{font-family:var(--f-mono);font-size:1.3rem;font-variant-numeric:tabular-nums;color:var(--cold)}
+.twin div.win{border-color:var(--cold);background:var(--cold-soft)}
+kbd{font-family:var(--f-mono);font-size:.7rem;border:1px solid currentColor;border-radius:4px;padding:0 5px;margin-left:4px;opacity:.7}
+.btn{padding:11px 22px;font-size:1rem}
+.btn.bad{background:var(--warm);border-color:var(--warm)}
+.quiz{padding:26px 20px}
+.quiz .q{font-size:1.4rem}
+.quiz .ans{font-size:1rem}
+/* 準備清單 / 海報講解 / 文獻 / Logbook */
+.chk{list-style:none;margin:0 0 10px;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.chk li{border-bottom:1px solid var(--line)}
+.chk li:last-child{border-bottom:0}
+.chk label{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;cursor:pointer}
+.chk input{flex:none;width:20px;height:20px;margin:3px 0 0;accent-color:var(--ok)}
+.chk .t{flex:1;min-width:0}
+.chk .t small{display:block;color:var(--muted);font-size:.86rem;line-height:1.6;margin-top:2px}
+.chk input:checked+.t{opacity:.55}
+.chk input:checked+.t b{text-decoration:line-through}
+.pill{display:inline-block;font-family:var(--f-mono);font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:4px;margin-right:6px;vertical-align:1px;background:var(--warm-soft);color:var(--warm)}
+.pill.c{background:var(--cold-soft);color:var(--cold)}
+.seg{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:0 0 10px}
+.seg .hd{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.seg .hd b{font-family:var(--f-display);font-size:1.02rem}
+.seg .hd span{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.seg .pt{font-size:.85rem;color:var(--cold);margin:0 0 6px}
+.seg .sp{margin:0;line-height:1.85}
+.seg .more{margin:10px 0 0;padding:8px 12px;background:var(--bg);border-radius:6px;font-size:.92rem}
+.seg .more b{color:var(--cold)}
+.ref{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:0 0 8px}
+.ref .who{font-weight:700}
+.ref .src{color:var(--muted);font-size:.84rem;margin:0 0 6px;overflow-wrap:anywhere}
+.ref p{margin:0 0 4px;font-size:.95rem}
+.ref .use{color:var(--cold)}
+.note{background:var(--warm-soft);border-radius:8px;padding:12px 16px;margin:0 0 14px;font-size:.95rem}
+.note b{color:var(--warm)}
+.note p{margin:0 0 6px}
+.note p:last-child{margin:0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="top"><h1>蟄眠箱答辯卡</h1><span class="prog" id="prog">0 / 0 已掌握</span></div>
+    <div class="bar"><i id="barfill"></i></div>
+    <nav id="tabs" role="tablist" aria-label="題型"></nav>
+  </header>
+  <main id="view"></main>
+</div>
+
+<script>
+var CATS=[
+ {id:"cheat",name:"速查"},
+ {id:"todo",name:"準備清單"},
+ {id:"poster",name:"海報講解"},
+ {id:"refs",name:"文獻"},
+ {id:"log",name:"Logbook"},
+ {id:"use",name:"有什麼用"},
+ {id:"concept",name:"概念題"},
+ {id:"project",name:"項目題"},
+ {id:"judge",name:"評委通用"},
+ {id:"hard",name:"刁難題"},
+ {id:"extra",name:"發散"},
+ {id:"quiz",name:"抽題練習"}
+];
+var CARDS=[
+/* ---- 有什麼用 ---- */
+{c:"use",q:"你這個作品到底有什麼用？",a:"<p><b>說：</b> 這是面向未來微重力蟄眠實驗的脂尾袋鼩地面原型飼養籠，用 TEC 雙向溫控（降溫誘導蟄眠、加熱喚醒），帶溫濕度監測、紅外影像和分級安全保護，給人工蟄眠研究提供硬體平台。</p><p class=\"plain\"><b>白話：</b>太空人在太空久了肌肉會變細、骨頭會變脆；有些小動物會「睡一覺省能量」，睡的時候身體損失很小。要研究牠，先要有一個能讓牠冷下來睡、暖起來醒的籠子，我們做的是這個籠子在地面上的第一版。</p>"},
+{c:"use",q:"它能幫到誰？誰會用？",a:"<p><b>說：</b> 直接用戶是空間生命科學和蟄眠生理的研究者；長遠受益的是長期載人深空任務的航天員，以及廢用性肌萎縮、骨質疏鬆的臨床研究。</p><p class=\"plain\"><b>白話：</b>現在是給做研究的科學家用；將來可能幫到太空人，也可能幫到長期臥床的病人。（注意：病人那條是研究方向，不是說這個籠子能治病。）</p>"},
+{c:"use",q:"誰在乎小動物睡不睡覺？",a:"<p><b>說：</b> 研究價值在蟄眠期間的抗廢用性萎縮、抗骨質流失機制；文獻顯示冬眠動物的骨骼肌通過代謝重塑避免萎縮。</p><p class=\"plain\"><b>白話：</b>重點不是牠睡覺，是牠睡覺時「肌肉骨頭不容易壞」這個本事。</p>"},
+{c:"use",q:"不去太空，在地球上能用嗎？",a:"<p><b>說：</b> 系統本身是通用的小型可控環境平台：閉環溫控、多參數監測、CSV 數據記錄、紅外影像、異常自動停機，可以用在小動物、昆蟲、植物的溫度生理實驗。</p><p class=\"plain\"><b>白話：</b>它就是一個會自己控溫度、記數據、拍夜視畫面、出事自己停的小箱子，學校實驗室也負擔得起。（邊界：降溫只到出風口約 15°C，箱內還沒那麼冷。）</p>"},
+{c:"use",q:"現在就能用嗎？還差什麼？",a:"<p><b>說：</b> 目前只完成空箱測試；巢穴約 22°C，未達論文要求的艙內 15°C；安全機制有已知漏洞（#36、#37、手動模式 #8）；動物實驗需要倫理審批。</p><p class=\"plain\"><b>白話：</b>還不能放動物：箱子還不夠冷、有幾個安全問題要補、還要先拿到批准。我們先驗證的是「硬體能不能做到」。</p>"},
+{c:"use",q:"這跟普通人的生活有什麼關係？",a:"<p><b>說：</b> 廢用性肌萎縮和骨質疏鬆在長期臥床者和老年人中很常見，和微重力下的生理變化相似；蟄眠的保護機制是潛在的轉化方向。</p><p class=\"plain\"><b>白話：</b>老人、長期躺床的人也會肌肉變細、骨頭變脆，跟太空人很像，弄懂動物怎麼避免，將來可能變成新的治療思路。</p>"},
+{c:"use",q:"做這個花了多少錢？貴不貴？",a:"<p><b>（答辯前自己算總數填這裡）</b> <b>說：</b> 全部用商用現成器件 + 開源硬件 + 3D 列印，主要成本是 ESP32 主控、TEC、H 橋、感測器、攝影機和 PLA 耗材，總共約 ___ 元。</p><p class=\"plain\"><b>白話：</b>零件都是網上買得到的，比買一台商用動物恆溫箱便宜很多。</p>"},
+{c:"use",q:"能不能做很多台、推廣？",a:"<p><b>說：</b> 可複製性好：器件都是現貨，結構件 3D 列印，固件和文檔都整理好了；擴展成多通道可以設對照組。簡介裡的六籠單元目前只是 CAD 設計。</p><p class=\"plain\"><b>白話：</b>照著我們的資料就能再做一台；做幾台一起用，就能一台當對照。</p>"},
+{c:"use",q:"跟直接買現成的恆溫箱比，好在哪？",a:"<p><b>說：</b> 商用恆溫箱多用壓縮機製冷，精度高但體積大、成本高、不能定制；我們用 TEC，可雙向溫控、可按實驗改，還自帶遠程監測、紅外影像和安全停機。</p><p class=\"plain\"><b>白話：</b>現成的更準但大、貴、改不了；我們的小、便宜、能按這個實驗改。不比精度，比適合。</p>"},
+{c:"use",q:"動物在裡面會不會痛苦？蟄眠有害嗎？",a:"<p><b>說：</b> 脂尾袋鼩是自發性每日蟄眠物種，蟄眠是正常生理行為；文獻記載甦醒時體溫回升 0.7–1.0°C/min，約 15 分鐘從約 15°C 回到 30–34°C，不造成長期損害。</p><p class=\"plain\"><b>白話：</b>牠在野外本來每天都會這樣睡，醒得也快，不傷身。我們目前沒放動物，以後放也要先過倫理審批。</p>"},
+{c:"use",q:"為什麼不直接用人做實驗？",a:"<p><b>說：</b> 人類沒有自發蟄眠能力，而且受倫理限制，必須先在動物模型裡確定機制和安全參數。</p><p class=\"plain\"><b>白話：</b>人不會自己蟄眠，也不能拿人亂試，先在會蟄眠的動物身上弄清楚。</p>"},
+{c:"use",q:"人真的能像動物那樣冬眠嗎？",a:"<p><b>說：</b> 人工誘導人類進入低代謝狀態仍在研究階段，還沒實現。</p><p class=\"plain\"><b>白話：</b>現在還不能，這正是科學家在研究的；我們只是幫他們做工具。</p>"},
+{c:"use",q:"什麼叫「地面原型」？",a:"<p><b>說：</b> 在地面驗證核心功能（溫控、監測、安全）的工程樣機，沒有經過飛行鑒定（振動、失重、輻射、真空等測試）。</p><p class=\"plain\"><b>白話：</b>就是「上太空之前，先在地上做的試驗版」。</p>"},
+{c:"use",q:"你們從這個項目學到什麼？",a:"<p><b>說：</b> ① 氣流熱負載：風量不是越大越好；② 結論要靠控制變量的對照實驗，我們兩次改結構都因變量沒控制住而無法歸因；③ 失效安全（fail-safe）設計：異常時設備要自動進入安全狀態。</p><p class=\"plain\"><b>白話：</b>直覺會騙人；要比較就只能改一樣東西；出事時機器要自己停。</p>"},
+{c:"use",q:"你們怎麼分工？",a:"<p><b>（三位成員答辯前對好，各自能講自己那塊的細節）</b> 例如：誰負責接線和硬體、誰負責程式和網頁、誰負責實驗和數據、誰負責報告和 CAD。</p>"},
+{c:"use",q:"為什麼對這個題目有興趣？",a:"<p><b>（用自己的真實經歷講一句，不要背範例）</b> 例如：看到太空人回地球要人扶著走的新聞，好奇有沒有辦法；後來查到小動物蟄眠能保護肌肉。</p>"},
+/* ---- 概念題 ---- */
+{c:"concept",q:"什麼是蟄眠（torpor）？和冬眠區別？",a:"<p><b>說：</b> 蟄眠是動物主動、可逆地降低代謝率和體溫的狀態。每日蟄眠持續數小時，冬眠以季節計、可持續數月；脂尾袋鼩能自發每日蟄眠。</p><p class=\"plain\"><b>白話：</b>像手機開省電模式；蟄眠是睡幾個鐘頭，冬眠是一睡幾個月。</p>"},
+{c:"concept",q:"為什麼研究蟄眠和太空有關？",a:"<p><b>說：</b> 微重力下抗重力肌（如比目魚肌）發生廢用性萎縮，並伴隨骨質流失；文獻顯示冬眠動物骨骼肌通過代謝重塑避免廢用性萎縮。</p><p class=\"plain\"><b>白話：</b>沒有重力，肌肉骨頭不用出力就會變細變脆，像腿打石膏幾個月會變細；但冬眠動物躺幾個月肌肉卻不太萎縮。</p>"},
+{c:"concept",q:"為什麼選脂尾袋鼩？",a:"<p><b>說：</b> 能自發每日蟄眠、不需季節誘導；成年 10–20 g；尾部儲脂可作非侵入的代謝指標；原生澳洲乾燥氣候，耐受資源受限環境。</p><p class=\"plain\"><b>白話：</b>牠天天都會自己蟄眠，個子小，看尾巴胖瘦就知道牠的能量狀況，不用抽血。</p>"},
+{c:"concept",q:"TEC 是什麼？原理？",a:"<p><b>說：</b> TEC1-12703 半導體製冷片，基於帕爾貼效應：直流電流過 P/N 型半導體時，一面吸熱、一面放熱；<b>改變電流方向，冷熱面互換</b>。我們用 BTS7960 H 橋切換方向，所以同一片既能製冷也能加熱。</p><p class=\"plain\"><b>白話：</b>它是一個「熱量搬運工」，通電就把熱從一面搬到另一面；反過來通電就反過來搬。</p>"},
+{c:"concept",q:"為什麼用 TEC 而不是壓縮機？",a:"<p><b>說：</b> TEC 是固態器件，沒有運動部件、沒有製冷劑、無振動、可雙向；缺點是能效比（COP）低，熱端要散掉的熱比較多。</p><p class=\"plain\"><b>白話：</b>冰箱的壓縮機又大又會震；TEC 很小很安靜，還能冷熱兩用，代價是比較費電。</p>"},
+{c:"concept",q:"為什麼熱端要散熱？",a:"<p><b>說：</b> 熱端排熱量 = 冷端吸熱量 + 輸入電功率；熱端溫度降不下來，冷熱面溫差有限，冷端溫度就跟著上升。</p><p class=\"plain\"><b>白話：</b>跟冷氣一定要有室外機一樣，熱搬出來要有地方丟。</p>"},
+{c:"concept",q:"銅片有什麼用？",a:"<p><b>說：</b> 0.3 mm 紫銅片作均熱片，利用銅的高導熱率把 TEC 熱面集中的熱量橫向擴散，降低擴散熱阻，讓整塊散熱器底面參與散熱。冷面約 16–17°C 降到約 5–6°C（手測，沒有存 CSV，要如實說）。</p><p class=\"plain\"><b>白話：</b>把一小團熱「攤平」到整塊散熱器上。</p>"},
+{c:"concept",q:"bang-bang 控制是什麼？",a:"<p><b>說：</b> 開關式控制加死區：巢穴溫度高於「目標 + 死區」滿功率製冷，低於「目標 − 死區」滿功率加熱，區間內關閉。優點簡單可靠，缺點是溫度在死區內波動。</p><p class=\"plain\"><b>白話：</b>像冷氣「到溫度就停、熱了再開」。</p>"},
+{c:"concept",q:"為什麼不用 PID？",a:"<p><b>說：</b> 07-23 上午試過 PI，調了兩個鐘頭：當時室溫 29–30°C、目標 28°C，溫差太小，PI 輸出一直偏低，13:07 改成開關式。正式 24→15°C 實驗溫差大，到時要換回 PI（步驟在 CONFIG_GUIDE §3.5）。</p><p class=\"plain\"><b>白話：</b>溫差太小時那套「按差距算功率」的方法使不上力，就先用最簡單的開關法。</p>"},
+{c:"concept",q:"PWM 是什麼？",a:"<p><b>說：</b> 脈寬調變：以固定頻率高速開關，用占空比（開的時間比例）調平均功率；TEC 經 H 橋用 PWM 調功率。冷端風扇是 4 線 PWM 風扇：電源一直接著，ESP32 只給控制線送 25 kHz 信號，風扇內部按占空比調轉速，所以 52% 是控制信號占空比，不等於 52% 轉速。</p><p class=\"plain\"><b>白話：</b>像飛快地開關燈，開的時間長一點就亮一點。</p>"},
+{c:"concept",q:"ESP32 是什麼？為什麼選它？",a:"<p><b>說：</b> 雙核、內建 WiFi 的低成本微控制器，同時跑控溫、Web 伺服器和 OLED，不需要另外的網關。</p><p class=\"plain\"><b>白話：</b>一塊很便宜、能上網的小電腦板，一塊就能管溫度又能開網頁。</p>"},
+{c:"concept",q:"DS18B20 是什麼？",a:"<p><b>說：</b> 數位溫度感測器，用 OneWire 單總線，每顆有唯一的 64 位 ROM 地址，我們按地址分配角色，12 位解析度（0.0625°C）。3 顆：巢穴（控溫）、活動區（監測）、出風口（過熱保護）。</p><p class=\"plain\"><b>白話：</b>三根溫度計共用一條線，每根有自己的「身份證號」，所以分得清誰是誰。</p>"},
+{c:"concept",q:"BME680 測什麼？",a:"<p><b>說：</b> 溫度、濕度、氣壓、氣體電阻。用溫濕度算露點做防結露警示；氣體只記錄原始電阻，不換算成 CO₂ 或空氣品質指數。</p><p class=\"plain\"><b>白話：</b>一個小晶片同時量冷熱、乾濕和氣壓，用來判斷箱子裡會不會「出水」。</p>"},
+{c:"concept",q:"為什麼要紅外攝影機？",a:"<p><b>說：</b> 脂尾袋鼩夜間活動，用 940 nm 近紅外補光，人眼看不見，一般認為對夜行小動物干擾很小，不打亂晝夜節律。</p><p class=\"plain\"><b>白話：</b>像夜視監控，黑暗中也能看到動物，又不會開燈吵醒牠。</p>"},
+{c:"concept",q:"什麼是露點、為什麼擔心結露？",a:"<p><b>說：</b> 露點是空氣在含水量不變下冷卻到飽和、開始凝結的溫度；我們用 BME680 溫濕度按 Magnus 公式計算，出風口 ≤ 露點 + 1°C 時警示。冷端鰭片比露點冷，必然凝露，水滴可能被吹向動物，所以做了警示和雙層網架空。</p><p class=\"plain\"><b>白話：</b>夏天冰水杯外面出水珠就是結露。</p>"},
+{c:"concept",q:"為什麼要 3D 列印？",a:"<p><b>說：</b> PLA 熔融沉積列印，快速原型迭代、成本低；P1→P3 三輪靠它。</p><p class=\"plain\"><b>白話：</b>改設計不用開模，印一個新的就能試。</p>"},
+{c:"concept",q:"什麼是 I²C？",a:"<p><b>說：</b> 兩線串列匯流排（SDA 數據線、SCL 時鐘線），每個設備有自己的地址；OLED 和 BME680 共用。</p><p class=\"plain\"><b>白話：</b>兩條線像一條共用電話線，每台設備有自己的號碼。</p>"},
+{c:"concept",q:"看門狗（watchdog）是什麼？",a:"<p><b>說：</b>一個獨立倒數的計時器。主程序每跑一圈就把它重置一次（叫「餵狗」），程序卡住、超過 7 秒沒餵，它就強制讓 ESP32 重啟。我們用 ESP32 自帶的任務看門狗：<code>esp_task_wdt_init(7, true)</code>。</p><p><b>為什麼要：</b>程序卡死時 TEC 會停在最後狀態，如果剛好在全力製冷或加熱，箱子會一直冷下去或熱下去；有看門狗，最多 7 秒就重啟、重新控溫。接相機那幾天主循環被拖住，它真的觸發過重啟。</p><p class='plain'><b>白話：</b>像一個「每 7 秒要按一次的按鈕」，程序正常會一直按，死機按不到，它就自動幫你重開機。</p><p class='careful'><b>邊界</b>：只管「程序卡死」，管不了「程序沒卡但邏輯算錯」；重啟後自動恢復運行靠斷電恢復功能，還沒上機拔電驗證。</p>"},
+/* ---- 項目題 ---- */
+{c:"project",q:"為什麼選 TEC1-12703，不選 12706？",a:"<p>07-22 兩片都測了：同一個散熱器、同一套探頭，製冷前先把箱子加熱到 29–30°C 當統一起點。</p><ul><li>製冷約 10 分鐘：12703 降 4.6°C（0.449 °C/min），12706 降 4.2°C（0.414 °C/min）</li><li>加熱約 5 分鐘：12703 升 7.0°C（1.484 °C/min），12706 升 6.7°C（1.305 °C/min）</li><li>功耗：12703 約 36 W，12706 約 72 W（12 V × 額定電流估算，沒實測）</li></ul><p><b>關鍵一句</b>：12706 功率翻倍，製冷反而略差，說明當時卡住的是熱端散熱，不是片子不夠大。</p><p class='plain'><b>白話：</b>大的那片多用一倍電，但熱散不出去，反而沒比小的冷。</p><p class='careful'><b>注意</b>：這組是舊的比例控溫固件，每種只測一次。</p>"},
+{c:"project",q:"你們最大的發現是什麼？",a:"<p><b>冷端風扇降速優於全速。</b>08-01 同一次實驗裡：風扇 100% 時出風口停在 18.6°C 下不去；手動降到 52% 後，23 分鐘內降到 14.87°C。</p><p><b>說：</b>全速時氣流熱負載大，大量室溫空氣流過冷端，TEC 的製冷量被拿去冷卻新進空氣；降速後空氣在鰭片間停留更久、換熱更充分。</p><p class='plain'><b>白話：</b>風吹太快，空氣「來不及被冷到」就走了，像手在冰塊上快速划過不覺得冰，放著才冰。</p><p class='careful'><b>注意</b>：這是聽了建議才試的，被問「誰想到的」要如實說。</p>"},
+{c:"project",q:"50% 只到 17.3°C，52% 卻到 14.9°C，差 2% 怎麼差這麼多？",a:"<p>不是 2% 造成的。兩檔的條件不一樣：</p><ul><li>50% 只跑了 4 分 44 秒，到 17.33°C 時還在以約 0.28°C/min 往下降，沒到穩定</li><li>52% 跑了約 23 分鐘，而且開始時箱子已經被前面預冷過</li></ul><p>所以數據只能說明「降速比全速好」，不能說 52% 比 50% 好，更不能說 52% 是最優。要回答這個，要做檔位掃描：30/40/50/60/70/80/100% 每檔穩定 15 分鐘。</p>"},
+{c:"project",q:"08-01 那條曲線中間，溫度為什麼又升上去了？",a:"<p>11:59 到 12:02 那段。當時中途停過一次系統，風扇回到 100%，三個探頭一起往上升，出風口從 17.33 升到 21.81°C。12:06 重新手動設 52%，之後一路降到 14.87°C。</p><p class='careful'><b>注意</b>：這段是操作造成的，不是設備自己失控；分析時要排除這一段。</p>"},
+{c:"project",q:"這個設備現在的自動模式是怎麼工作的？",a:"<p><b>說：</b>開關式控溫，看的是巢穴溫度。高於「目標 + 0.5°C」就全力製冷、風扇全速；低於「目標 − 0.5°C」就全力加熱、風扇全速；在範圍內就關 TEC，風扇再轉 10 秒（約 78%）後停。大約每 4 秒判斷一次。所有安全保護也只在自動模式下生效。</p><p class='plain'><b>白話：</b>像冷氣「到溫度就停、熱了再開」，只是它太冷了還會自己加熱。</p><p class='careful'><b>注意</b>：箱子現在巢穴最冷約 22°C，目標設 15°C 的話它會一直製冷，到不了「停」那一步。</p>"},
+{c:"project",q:"既然 52% 更冷，為什麼自動模式的風扇還是 100%？",a:"<p><b>說：</b>程式裡自動製冷、加熱時寫的是 <code>setFan(255)</code>，也就是全速。早期（07-22 比例控溫、07-23 上午 PI 版）風扇是跟著 TEC 功率變速的，功率越大風扇越快；07-23 改成開關式後，製冷加熱時就固定全速。08-01 才發現降速反而更冷，這個結論還沒寫回自動控制，現在要靠網頁滑條手動設 52%。</p><p><b>為什麼沒直接改成 52%</b>：52% 沒被證明是最優，先做檔位掃描再改才有根據。09-10 收尾時也決定不再改控溫代碼。</p><p class='plain'><b>白話：</b>實驗是手動把風扇調慢才那麼冷的，自動模式還沒學會這一招。</p><p class='careful'><b>注意</b>：演示時拖滑條沒問題（TEC 照樣自動、保護照常），但不要按「製冷/加熱」按鈕，那是沒有保護的手動模式。</p>"},
+{c:"project",q:"出風口到了 15°C，算不算達到目標？",a:"<p>不算。論文要的 15°C 是<b>艙內環境</b>溫度。出風口是箱子裡最冷的一點，14.87°C；動物住的巢穴在對角最遠端，同一時刻是 22.19°C，差約 7°C。</p><p class='plain'><b>白話：</b>出冷氣的地方夠冷了，但冷氣送到動物那裡已經變暖了。</p>"},
+{c:"project",q:"巢穴比出風口熱 7°C，冷量丟在哪裡？",a:"<p>兩個猜測，都沒證實也沒排除：</p><ul><li>箱體漏熱：PLA 壁只有 2–3 mm，冷氣繞到對角已被外面的熱加熱</li><li>冷端換熱不足：冷端換熱面只有約 16 cm²，冷面手測已經 5–6°C，冷量卻傳不太到空氣裡</li></ul><p>試過兩次：約 08-22 貼 20 mm XPS 保溫（查漏熱），08-29 在冷端夾鋁板（查換熱）。但兩次條件都沒控制好，說明不了問題。</p>"},
+{c:"project",q:"貼了 XPS 保溫板之後，巢穴溫度有改善嗎？",a:"<p><b>沒有能說明問題的數據。</b>08-26 那次測試巢穴 38 分鐘從 26.10 升到 26.50°C，看起來沒用，但同時有三個條件變了：</p><ul><li>風扇 100%，不是 52%</li><li>室溫 27–28°C，比 08-01 高約 3°C</li><li>探頭接觸不良，讀到過 85°C 假讀數，還誤急停一次</li></ul><p>所以不能說 XPS 沒用。正確做法：同樣 52%、記下室溫，有 XPS 和沒 XPS 各測一次。</p><p class='careful'><b>注意</b>：巢穴 22°C 是沒裝 XPS 時測的；現在這台（有 XPS）沒在 52% 下測過。答辯前補測了就報新數字。</p>"},
+{c:"project",q:"TEC 冷面 5–6°C 是怎麼量出來的？",a:"<p>是手測的，加銅片之後量的，當時沒存數據，沒有 CSV。08-27 又手測過一次：熱面約 28°C、冷面約 5–6°C。</p><p class='careful'><b>注意</b>：要主動說是手測。被問「有沒有記錄」就說沒有，這是我們數據的弱點。</p>"},
+{c:"project",q:"為什麼試了 8.5 V 降壓，最後不用？",a:"<p>07-23 測的：12703 接 8.5 V 製冷 10 分半只降 3.62°C（12 V 時 4.6°C），出風口最低 26.13°C（12 V 時 25.4°C）。按速率算製冷慢了約 24%。省下的電換不回製冷的損失，所以保留 12 V。</p><p>一個有意思的副產品：8.5 V 時加熱速率 0.948°C/min，剛好落在動物自然甦醒的 0.7–1.0°C/min，以後想模擬自然復溫可以當一檔用。</p>"},
+{c:"project",q:"熱端是怎麼散熱的？",a:"<p>TEC 熱面 → 0.3 mm 紫銅片（兩面塗散熱膏）→ 箱外鋁鰭片散熱器 → 7 cm、5500 RPM 風扇一直全速吹。</p><p>早期試過四熱管塔式 CPU 散熱器，體積太大、噪音大，放棄了。</p><p class='careful'><b>注意</b>：作品簡介寫的是「塔式熱管散熱器」，那是舊方案，實物不是。被問就照實說已經換掉。</p>"},
+{c:"project",q:"冷凝水最後去哪了？",a:"<p><b>沒有做集水盤或排水</b>（09-10 決定，時間不夠）。目前的處理是：</p><ul><li>箱底雙層 304 不鏽鋼網（8 目），把動物墊高，不碰積水</li><li>鋪了隔水墊</li><li>BME680 算露點，出風口 ≤ 露點 + 1°C 時網頁出橫幅、OLED 顯示 DEW 提醒</li></ul><p class='careful'><b>注意</b>：水滴還是可能被風吹到動物身上，這是已知問題（LIMITATIONS #25）。</p>"},
+{c:"project",q:"為什麼結露只提醒，不自動降低製冷？",a:"<p>出風口測的是氣流溫度，冷端鰭片表面其實比它更冷，所以這個信號本身就偏晚。拿一個偏晚的信號去降功率，風險比好處大。等冷端表面另加了探頭，再考慮聯動。</p>"},
+{c:"project",q:"三個溫度探頭分別在哪？為什麼這樣放？",a:"<ul><li><b>巢穴</b>：箱內對角最遠端，動物住的地方，也是最難冷到的地方，所以用它來控溫</li><li><b>活動區</b>：只監測，看箱內環境</li><li><b>出風口</b>：冷風出來的地方，做過熱保護（≥ 50°C 急停）</li></ul><p>三顆按各自的 ROM 地址分角色，不取平均；取平均會把最熱和最冷混在一起，沒有意義。</p><p class='careful'><b>注意</b>：指著實物說具體位置，答辯前自己看一眼探頭在哪。</p>"},
+{c:"project",q:"OLED 屏幕上顯示什麼？網頁多久更新一次？",a:"<p>OLED：巢穴、活動區、出風口三個溫度（斷線顯示 ---），當前狀態（製冷/加熱/待機/關），目標溫度，風扇百分比，自動或手動；有結露風險時顯示 DEW。</p><p>網頁每 1 秒向 ESP32 要一次數據（開相機時 5 秒），溫度約 4 秒更新一次。數據可以匯出成 CSV。</p>"},
+{c:"project",q:"停電再來電，設備會怎樣？",a:"<p>目標溫度等參數存在 ESP32 的 EEPROM 裡，來電後讀回來；如果停電前系統是開著的，會自動重新開始控溫。但如果之前是<b>緊急停機</b>，就不會自己重開，要人去檢查。</p><p class='plain'><b>白話：</b>停電不該讓實驗斷掉；可是出過事的，不能讓它自己又跑起來。</p><p class='careful'><b>注意</b>：10-04 才加的，拔電試過才說「驗證過」，沒試就說還沒上機驗證。</p>"},
+{c:"project",q:"出事了怎麼辦？有哪些安全保護？",a:"<ul><li>任一探頭連續 3 次讀不到（約 12 秒）→ 緊急停機</li><li>出風口 ≥ 50°C → 整機停機；40°C 起逐步降功率</li><li>巢穴低於 5°C 或高於 35°C → 只關 TEC，風扇繼續換氣</li><li>看門狗：程式卡住超過 7 秒自動重啟</li><li>參數斷電保存，來電自動恢復</li></ul><p class='careful'><b>注意</b>：手動模式（網頁製冷/加熱按鈕）下這些保護全部不生效。</p>"},
+{c:"project",q:"你們的保護可靠嗎？有沒有出過問題？",a:"<p>主動講已知漏洞：</p><ul><li>DS18B20 剛上電會回傳 85.0°C，程式只剔除大於 85 的，08-26 因此誤讀出風口 56°C、誤急停一次（#37）</li><li>本來就缺一顆探頭、之後整條線又全掉時，不會急停（#36）</li><li>手動模式全部保護不生效（#8），08-31 那次就是手動模式跑的</li></ul><p>演示前用 <code>/diag</code> 確認 3 顆探頭在線、晃一晃線看有沒有跳 85.00；動物實驗前必須改代碼。</p>"},
+{c:"project",q:"兩塊 ESP32 怎麼分工？相機壞了會怎樣？",a:"<p>主控 ESP32 管溫控、網頁、OLED；另一塊 ESP32-S3 相機板只管影像和紅外燈。兩塊只通過 WiFi 聯繫，瀏覽器直接連相機看串流。相機壞了不影響控溫。</p><p>一開始讓主控代理相機畫面，結果主控的程式被拖住、按鈕沒反應，還觸發過看門狗重啟，所以才拆開。</p>"},
+{c:"project",q:"怎麼證明你的程式是對的？",a:"<p>兩種：桌面端單元測試 41 項全部通過（控溫判斷、安全保護、EEPROM、防結露等）；另外 18 份實測 CSV。</p><p class='careful'><b>注意</b>：單元測試是把邏輯複製出來在電腦上測（鏡像測試），不是直接測燒進板子的程式，也測不了硬體。</p>"},
+{c:"project",q:"製冷和加熱方向反過來是怎麼回事？",a:"<p>11-02 重新燒錄後，按網頁「製冷」實際在加熱。原因應是之前拆裝時動過線。這次不動線，在程式裡把兩個 PWM 腳對調（製冷 GPIO25、加熱 GPIO26），重新燒錄後上機確認方向正常。</p><p>教訓：改程式和改接線只能二選一，不然會一直反。</p>"},
+{c:"project",q:"箱子有多大？",a:"<p>外尺寸約 20 × 24 × 16 cm，3D 列印 PLA 外殼；裡面貼 20 mm XPS 保溫板，內部約 16 × 20 × 12 cm，約 3.8 升。</p>"},
+/* ---- 評委通用 ---- */
+{c:"judge",q:"你說是因為太空人肌肉萎縮，那為什麼做的是籠子，不是研究肌肉？",a:"<p>中學生沒辦法做太空實驗或動物實驗。但要研究蟄眠，第一步一定是一個能穩定控溫、能監測的實驗載體；沒有它，後面的研究都做不了。所以我們選了能力範圍內、又是整個研究必需的那一環。</p>"},
+{c:"judge",q:"哪些是你們自己做的？哪些是別人幫的？",a:"<p>自己做的：接線、全部程式和網頁、3D 列印箱體、所有實驗和數據分析。</p><p>別人幫的：指導老師王恒老師給方向和要求；加銅片和風扇降速是聽了建議才去試的；查新和文獻。</p><p class='careful'><b>注意</b>：三個人答辯前對好分工，每人能指著實物講自己那塊。</p>"},
+{c:"judge",q:"整個項目花時間最多的是哪一部分？",a:"<p>接相機。07-24 到 07-28 幾乎都耗在上面，07-27 一天 37 次提交。串流卡死、紅外燈沒反應，換了好幾種寫法，最後發現是開發板型號選錯了：選的是通用 S3 板型，不認板上的 8 MB PSRAM，畫面緩衝放不下就崩。換成正確的 dfrobot_dfr1154 板型才解決。</p><p>教訓：遇到怪問題先查最基本的設定。</p>"},
+{c:"judge",q:"你們遇到最難的問題是什麼？怎麼解決的？",a:"<p>箱內降不到 15°C。先判斷熱端是瓶頸，加了銅片，出風口從 24–26°C 降到 18.6°C；再發現風扇太快，降到 52%，出風口到 14.87°C；但巢穴還是 22°C。試了 XPS 和鋁板都沒拿到能說明問題的數據，最後和老師討論，09-03 決定先停在這裡，如實寫進報告，時間轉去做安全和監測。</p><p class='careful'><b>注意</b>：這題可以換成相機那件事講，選一個自己最熟的。</p>"},
+{c:"judge",q:"如果重做一次，你第一件會改什麼？",a:"<ul><li>一開始就做對照實驗：每次只改一樣東西、記下室溫。我們 XPS 和鋁板兩次都因為同時改了好幾樣，結論說不清</li><li>冷端表面一開始就裝探頭，不靠手測</li><li>接相機時先確認板型設定，可以省好幾天</li></ul>"},
+{c:"judge",q:"下一步最先做什麼？為什麼是它？",a:"<p>同風速對照實驗：風扇都設 52%、記下室溫，有 XPS 和沒 XPS 各測一次。因為「7°C 丟在哪」是現在最大的問題，不先搞清楚，後面改什麼都是猜。</p><p>之後：巢穴局部冷區（用 XPS 把巢穴隔成約 1/6 體積的小空間直接送冷風）、風扇檔位掃描、把降速寫進自動模式、補安全漏洞、換回 PI 控溫，最後才是倫理批准後的動物預實驗。</p>"},
+{c:"judge",q:"如果風扇降速沒有讓溫度變低，你會怎麼判斷問題在哪？",a:"<p>那就說明冷端換熱不是瓶頸，問題在熱端：熱面散不掉，冷面也降不下來。我們 07-22 已經見過這種情況：12706 功率翻倍反而不更冷，就是熱端卡住。下一步會量熱面溫度、加大散熱器或風扇。</p>"},
+{c:"judge",q:"為什麼用網頁看數據，不做手機 App？",a:"<p>ESP32 本身就能開網頁伺服器，手機、電腦打開瀏覽器就能看，不用安裝、不分 iPhone 還是 Android。老師 08-01 也要求電腦上要有一個穩定的儀表板。</p>"},
+{c:"judge",q:"你們最大的不足是哪一個？",a:"<p>巢穴只到約 22°C，離論文要的 15°C 差 7°C，而且還找不到原因。其他不足：沒有動物實驗、只有一台沒有對照組、手動模式沒有保護、有幾個安全漏洞沒補。</p><p class='careful'><b>注意</b>：先說最大的那一個，再列其他；誠實比硬撐加分。</p>"},
+{c:"judge",q:"你們的實驗是怎麼做的？一次測試的步驟是什麼？",a:"<p>以 TEC 選型為例：把箱子先加熱到 29–30°C 當統一起點 → 同一個散熱器、同一套探頭 → 一片製冷約 10 分鐘、加熱約 5 分鐘 → 網頁匯出 CSV → 用時間戳算升降溫速率。換另一片重複一次。</p><p class='careful'><b>注意</b>：每種只測了一次，重複性有限。</p>"},
+/* ---- 刁難題 ---- */
+{c:"hard",q:"沒有動物實驗，憑什麼說它能誘導蟄眠？",a:"<p>我們不聲稱能誘導。目標溫度來自文獻：環境低於 18°C 時脂尾袋鼩蟄眠傾向顯著增加，論文流程是 24°C 降到 15°C。本項目驗證的是硬體能不能穩定提供這個環境；動物實驗要倫理批准，是下一階段。</p>"},
+{c:"hard",q:"太空裡的動物飼養箱不是本來就能調溫度嗎？你們有什麼不同？",a:"<p><b>說：</b>對，現有的在軌飼養設備本來就有溫控。日本 JAXA 的小鼠飼養單元放在 CBEF 設施裡，可控溫 15–40°C、控濕、控 CO₂；NASA 的囓齒類飼養艙也連續監測溫濕度。但它們調溫是為了把動物維持在<b>常溫、舒適</b>的範圍。</p><p><b>不同的地方</b>：專門為了<b>誘導蟄眠</b>、先降溫再加熱喚醒的飼養設備，目前還在概念階段。NASA 資助的 STASH 項目計劃在空間站上做一個能降到約 4°C 的冬眠實驗室，NASA 的介紹裡說研究囓齒類蟄眠所需的太空設施目前還不存在。我們做的是這個方向上一個低成本的地面原型。</p><p class='plain'><b>白話：</b>太空的動物籠子會開「冷氣」讓動物住得舒服；我們的籠子是要故意把牠弄冷、讓牠睡過去，再把牠暖醒，這種籠子太空裡還沒有。</p><p class='careful'><b>注意</b>：不要說「太空飼養箱都不能調溫」或「我們是第一個」。也不要跟 STASH 比溫度：它目標 4°C，我們巢穴只到約 22°C，只說方向相同、我們是地面原型。</p>"},
+{c:"hard",q:"箱內都沒到 15°C，這個原型算成功嗎？",a:"<p>部分成功。出風口 14.87°C 證明降溫能力夠；巢穴 22°C 說明冷量沒送到位。我們如實寫進報告，也提出了要怎麼查：同風速對照實驗分清是漏熱還是換熱不足。</p>"},
+{c:"hard",q:"簡介說熱端用塔式熱管散熱器、有 HEPA 濾芯和活性炭，實物上在哪？",a:"<p>塔式散熱器是早期方案，體積大、噪音大已經換掉，現在是鋁鰭片散熱器加銅片。HEPA、活性炭、吸附墊是設計構想，樣機最後沒裝，實際裝的是定向氣流和雙層不鏽鋼網。簡介寫得不夠準確，以實物為準。</p>"},
+{c:"hard",q:"簡介說「確認 52% 時最低」，可是你剛才說 52% 不一定最優？",a:"<p>簡介那句措辭過頭了。準確的說法是：52% 時測到出風口最低 14.87°C，但沒做檔位掃描，只能證明降速優於全速。</p>"},
+{c:"hard",q:"風小了出風口更冷，但送進箱子的總冷量是不是反而少了？",a:"<p><b>說：</b>有可能。冷氣帶走的熱量大約是<b>風量 × 溫差</b>（溫差 = 進冷端的空氣溫度 − 出風口溫度）。風扇降速後每份空氣冷得更多，但風量也少了，總冷量不一定更多。</p><p><b>粗算</b>（進冷端空氣約 23°C）：</p><ul><li>風扇 100%：出風口 18.6°C，每份空氣冷約 4.4°C，風量 1 → 1 × 4.4 ≈ 4.4</li><li>風扇 52%：出風口 14.9°C，每份空氣冷約 8°C，假設風量剩一半 → 0.5 × 8 ≈ 4</li></ul><p>兩邊差不多，所以出風口更冷，可能只是同樣的冷量集中在更少的空氣裡。</p><p><b>數據也有這個跡象</b>：同一次實驗，出風口從 18.6 降到 14.9°C（降 3.7°C），巢穴只從 23.3 降到 22.2°C（降 1.1°C），而且 52% 那段跑了 23 分鐘，這 1°C 有一部分可能只是時間更長。</p><p><b>結論</b>：選風速要以<b>巢穴溫度</b>為準，不能只看出風口。下一步做檔位掃描時兩個都要記，找讓巢穴最冷的風速。</p><p class='plain'><b>白話：</b>兩台冷氣，一台風大吹 18°C，一台風小吹 15°C。風小那台的風更冷，但房間不一定更涼，因為吹進來的風少了。</p><p class='careful'><b>注意</b>：「風量剩一半」是假設，52% 占空比不等於一半風量，我們沒量過風量；粗算只用來說明道理，不要當成測量結果講。</p>"},
+{c:"hard",q:"你的數據有多可靠？",a:"<p>老實說重複性有限：各批次室溫不同（24–28°C）；14.87°C 那組只測過一次；冷面 5–6°C 是手測沒記錄；P1 選型那組是舊固件。可靠的是「降速優於全速」這個結論，同一份 CSV 裡前後對比得出來。</p>"},
+{c:"hard",q:"微重力下氣流和冷凝水完全不同，怎麼保證？",a:"<p>保證不了。沒有重力，熱空氣不會上升，水滴也不會往下流，我們在地面做的風路和網底到太空都要重新驗證。地面原型只解決溫控和監測；簡介裡的定向氣流、防漏飲水嘴是設計思路，不是已驗證的結果。</p>"},
+{c:"hard",q:"TEC 那麼費電，整台設備用多少電？",a:"<p>12703 估算約 36 W（12 V × 3 A 額定值）。整機實際功耗沒測過，原本打算用 INA219 量電流，09-10 砍掉了。太空電源預算要到正式載荷階段才評估。</p>"},
+{c:"hard",q:"開關式控溫溫度會上下擺，對動物有害嗎？",a:"<p>設計上巢穴會在目標 ±0.5°C 之間擺動，實際擺多少沒量化過，對動物的影響也沒研究。正式蟄眠實驗前要換回 PI 控溫，讓溫度更穩。</p>"},
+/* ---- 發散 ---- */
+{c:"extra",q:"你們用了動物嗎？",a:"<p><b>沒有</b>，全部是空箱測試。動物實驗需要倫理審批，不在本項目範圍。</p>"},
+{c:"extra",q:"動物倫理的 3R 怎麼體現？",a:"<p>3R 是替代、減少、優化。減少：先用空箱把硬體調好，將來少用動物試錯。優化：紅外攝影不打擾夜間活動、雙層網把動物墊高不碰冷凝水、出事自動停機。</p><p class='careful'><b>注意</b>：封閉巢穴、紋理內壁按實物講，沒裝就說設計構想；LED 只能手動調光，不要說已有 12 小時晝夜循環。</p>"},
+{c:"extra",q:"簡介裡的植入晶片是做什麼的？你們做了嗎？",a:"<p>那是未來完整實驗的方案：用 DSI 植入式無線晶片連續記錄動物核心體溫，要麻醉手術植入。我們現在沒做，也做不了。</p>"},
+{c:"extra",q:"為什麼用 ESP32，不用 Arduino？為什麼用 DS18B20？",a:"<ul><li>ESP32：自帶 WiFi，一塊板就能控溫又開網頁；普通 Arduino Uno 沒有 WiFi，還要另加模組</li><li>DS18B20：數位輸出、一條線掛多顆、有現成防水探頭、解析度 0.0625°C</li><li>TEC1-12703：兩種都買來對比測過才選的</li></ul>"},
+{c:"extra",q:"太空實驗為什麼喜歡用小型動物？",a:"<p>體型小、重量輕、吃得少，飛行設備容易做小；脂尾袋鼩成年只有 10–20 g。</p>"},
+{c:"extra",q:"動物在太空裡會緊張嗎？你們怎麼考慮的？",a:"<p>會，陌生環境和失重都是壓力。NASA 的囓齒類棲息艙會給動物躲藏的地方和可以抓的表面。我們的設計參考了這個思路。</p><p class='careful'><b>注意</b>：封閉巢穴、紋理內壁實物上有沒有裝，以實物為準。</p>"},
+{c:"extra",q:"為什麼需要對照組？你們有嗎？",a:"<p>太空實驗要有地面對照組，條件完全一樣、只差重力，才能確定變化是失重造成的。我們只有一台，做不了對照，是已知局限；做多台就能解決。</p>"},
+{c:"extra",q:"設備多重？能承受發射振動、太空輻射嗎？",a:"<p>都沒測過。地面原型階段沒有涵蓋重量、振動、輻射、真空這些測試，屬於後續工程驗證。</p><p class='careful'><b>注意</b>：不要估一個數字出來，直接說沒測。</p>"}
+];
+var TAGS={use:"用途",concept:"概念",project:"項目",judge:"通用",hard:"刁難",extra:"發散"};
+
+function hero(){
+  var TOP=26,BOT=4;
+  function p(t){return ((TOP-t)/(TOP-BOT)*100).toFixed(2)+"%"}
+  var M=[
+   [24.5,"室溫","24–25°C","","var(--h-mid)"],
+   [22,"巢穴（動物住的地方）","約 22°C","未達標","var(--h-warm)"],
+   [18.6,"出風口，風扇全速","18.6°C","","var(--h-mid)"],
+   [14.9,"出風口，風扇 52%","14.9°C","約等於目標 15°C","var(--h-cold)"],
+   [5.5,"TEC 冷面（加銅片）","5–6°C","手測，沒有 CSV","var(--h-mid)"]
+  ];
+  var h='<section class="hero"><p class="eyebrow">整個項目的故事</p>'
+   +'<p class="big">出風口 <em>14.9°C</em>，巢穴 <em class="w">22°C</em></p>'
+   +'<p class="sub">冷氣出得來，但沒有送到動物住的地方。</p><div class="thermo" role="img" aria-label="溫度刻度：室溫24到25，巢穴22，出風口全速18.6，出風口52%風扇14.9，TEC冷面5到6度">'
+   +'<div class="tr"></div>'
+   +'<div class="brace" style="top:'+p(22)+';height:calc('+p(14.9)+' - '+p(22)+')"></div>'
+   +'<div class="gap" style="top:calc(('+p(22)+' + '+p(14.9)+') / 2)">差約 7°C</div>';
+  M.forEach(function(m){
+    h+='<div class="mk" style="top:'+p(m[0])+';--c:'+m[4]+'"><i class="dot"></i><div class="lb"><b>'+m[2]+'</b>'+m[1]+(m[3]?'<span>'+m[3]+'</span>':'')+'</div></div>';
+  });
+  h+='</div><p class="foot2">刻度 4–26°C，位置按實際溫度等比</p></section>'
+   +'<div class="twin"><div><small>風扇 100%</small><b>18.6°C</b></div><div class="win"><small>風扇 52%（手動）</small><b>14.9°C</b></div></div>';
+  return h;
+}
+var cheat=hero()
++'<h2>開場，背熟這幾句</h2>'
++'<div class="say"><small>30 秒版</small><p>載人深空飛行會讓航天員肌肉萎縮、骨質流失。冬眠類動物低代謝時這些損失更小。脂尾袋鼩每天能自發蟄眠、體型小。我們做的是<b>面向未來微重力實驗的地面原型飼養籠</b>：用半導體製冷片降到約 15°C 誘導蟄眠，再加熱喚醒，帶溫濕度監測、紅外攝影和多重安全保護。</p></div>'
++'<div class="say"><small>白話版開場（評委不是理科時用）</small><p>太空人在太空久了肌肉會變細、骨頭會變脆。有一種澳洲小動物叫脂尾袋鼩，每天會「睡一覺省能量」，睡的時候身體損失很小。科學家想研究牠，就需要一個能讓牠冷下來睡、暖起來醒、還能一直看著牠的籠子。我們做的就是這個籠子的地面試驗版。</p></div>'
++'<div class="say"><small>一句話創新點</small><p>現有太空動物飼養箱的溫控，是為了讓動物住得舒服；我們做的是一個<b>為蟄眠實驗設計</b>的飼養籠：設計目標是主動降溫誘導蟄眠、再加熱把牠喚醒，沒人看守也能自己監測和保護。這類設備在太空中還沒有，我們做的是它的低成本地面原型。</p><p style="margin-top:6px;color:var(--muted);font-size:.92rem"><b>白話：</b>別人的籠子開冷氣是讓動物住得舒服；我們的籠子是故意把牠弄冷睡過去、再把牠暖醒，而且出事會自己停。</p></div>'
++'<div class="say"><small>被追問「具體哪三點」時展開</small><ol style="margin:4px 0 0;padding-left:1.3em">'
++'<li><b>為蟄眠設計的「降溫—喚醒」循環。</b>現有在軌飼養艙（JAXA 小鼠飼養單元、NASA 囓齒類飼養艙）的溫控是維持常溫；專門為誘導蟄眠的設備還在概念階段（NASA 資助的 STASH）。我們用一片半導體製冷片，換電流方向就從製冷變加熱，對應論文「24°C 降到 15°C 誘導蟄眠、再升溫喚醒」的流程；壓縮機方案又大又震，還不能加熱。</li>'
++'<li><b>為無人值守設計的分級保護。</b>蟄眠實驗要連續跑很多個鐘頭，動物體溫低、反應弱，設備出錯比平時更危險。所以探頭失效、出風口過熱、巢穴越界、程式卡死、停電，各有對應處理；緊急停機後不會自己重開，要人檢查。再加上網頁遠程看數據和紅外攝影，晚上不用人守著。</li>'
++'<li><b>用對比實驗做工程決策，不靠直覺。</b>12703 對比 12706：功耗只有一半，製冷加熱反而更快。冷端風扇從全速降到 52%，出風口從 18.6°C 降到 14.9°C，發現風扇不是越快越好。</li>'
++'</ol><p style="margin-top:8px;font-size:.88rem;color:var(--muted)">注意：不要說「首創」「第一個」「太空飼養箱都不能調溫」；不要跟 STASH 比溫度（它目標約 4°C，我們巢穴約 22°C）。風扇那點的邊界：降低的是出風口溫度，對巢穴的效果還要驗證。</p></div>'
++'<div class="say"><small>一句話定位</small><p>這是地面原型，不是航天產品；目前只做了空箱測試，沒有動物實驗。</p></div>'
++'<div class="say" style="border-left-color:var(--warm)"><small style="color:var(--warm)">一句話局限</small><p>出風口約 15°C，但巢穴約 22°C，差約 7°C，還沒達到論文要求的艙內 15°C。</p></div>'
++'<h2>數字速查</h2>'
++'<div class="tablebox"><table class="nums"><thead><tr><th>項目</th><th>數值</th><th>備註</th></tr></thead><tbody>'
++'<tr><td>52% 風扇持續時間</td><td class="v">23 分鐘</td><td>手動設定；50% 檔只跑不到 5 分鐘</td></tr>'
++'<tr><td>TEC 冷面（無銅片）</td><td class="v">16–17°C</td><td>手測，無 CSV</td></tr>'
++'<tr><td>12703 製冷 / 加熱</td><td class="v">0.449 / 1.484</td><td>°C/min；12706 是 0.414 / 1.305</td></tr>'
++'<tr><td>功耗</td><td class="v">36 W vs 72 W</td><td>12703 vs 12706（12 V × 額定電流）</td></tr>'
++'<tr><td>實測數據</td><td class="v">18 份</td><td>P1、P2、P3 三批 CSV</td></tr>'
++'<tr><td>單元測試</td><td class="v">41 項</td><td>簡介寫 37，要更新</td></tr>'
++'<tr><td>傳感器無效停機</td><td class="v">3 次 ≈ 12 秒</td><td>看門狗 7 秒</td></tr>'
++'<tr><td>出風口急停</td><td class="v">50°C</td><td>40°C 起逐步降功率</td></tr>'
++'<tr><td>巢穴安全範圍</td><td class="v">5–35°C</td><td>超出關 TEC，風扇繼續</td></tr>'
++'</tbody></table></div>'
++'<h2>答辯前要處理</h2>'
++'<ul class="risk">'
++'<li><b>簡介和實物不一致。</b>簡介還寫 HEPA、活性炭、吸附墊，這些最後沒裝。口徑：那是設計構想，實物只有定向氣流加雙層不鏽鋼網。</li>'
++'<li><b>測試數量。</b>簡介寫 37 項，現在是 41 項。</li>'
++'<li><b>統一數字。</b>出風口一律說「約 15°C（14.9）」，不要一會 14.87 一會 14.9。</li>'
++'<li><b>五重保護要數得一樣。</b>感測器無效停機、出風口過熱停機、巢穴超限關 TEC、看門狗、斷電保存自動恢復。</li>'
++'<li><b>演示別用手動模式。</b>手動模式沒有保護；演示前按 PROGRESS 文檔的 5 分鐘檢查走一遍。</li>'
++'<li><b>簡介裡其他過頭的說法。</b>「熱端塔式熱管散熱器」實際已棄用，現在是鋁鰭片散熱器 + 銅片；鋁板「經對比後拆除」其實沒有對照數據；「關係曲線」只有 100/50/52 三個點；XPS「符合航天無毒標準」沒有依據；「可重複驗證」「24 小時監測」：14.87°C 只測過一次，最長連續實測約 63 分鐘。</li>'
++'<li><b>福利設計按實物講。</b>LED 只能手動調光，沒有 12L:12D 定時；飲水嘴、紋理內壁、封閉巢穴沒裝的一律說「設計構想」。</li>'
++'<li><b>拔一次電。</b>自動模式開著，拔掉 12 V 和 ESP32 供電再插回，看網頁是否自動回到運行、TEC 有沒有真的通電。試過才能說斷電恢復「驗證過」。</li>'
++'<li><b>有時間就補測。</b>巢穴 22°C 是沒裝 XPS 時測的；用現機手動 52% 跑 30–40 分鐘，拿到現在這台箱子的數字。</li>'
++'<li><b>不能說的話。</b>「52% 是最優」、「能誘導蟄眠」、「所有情況都有保護」、「已經降到 15°C」。</li>'
++'</ul>';
+
+/* ---- 準備清單 / 海報講解 / 文獻 / Logbook：靜態頁 ---- */
+function chk(id,title,sub,tag){
+  return '<li><label><input type="checkbox" data-k="'+id+'"><span class="t">'+(tag?'<span class="pill'+(tag==="可選"||tag==="當天"?' c':'')+'">'+tag+'</span>':'')+'<b>'+title+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</span></label></li>';
+}
+var PAGES={};
+PAGES.todo=''
++'<p class="lead">答辯卡已經覆蓋問答；這裡是答辯卡以外還要做的事。勾選會記在這台設備上。</p>'
++'<h2>答辯前必做</h2><ul class="chk">'
++chk("t-split","三人分工定下來","每人負責海報的一段（見「海報講解」的建議分段），而且能指著實物講自己做的那部分。「評委通用」裡「你們怎麼分工」那題還是佔位文字，定了要改。","最急")
++chk("t-talk","海報講解稿：3 分鐘版背熟，計時講 3 遍","先自己講，再互相講給對方聽；超時就砍「三大特點」那段的細節。5 分鐘版是在 3 分鐘版每段後面加一句。","最急")
++chk("t-refs","每人記住 5 篇核心文獻的作者和年份","「文獻」分頁裡標了「必記」的 5 篇。評委問「依據是什麼」時能說出作者、年份、講了什麼。","最急")
++chk("t-src","查清兩句沒有出處的說法","「低於 18°C 蟄眠傾向顯著增加」和「冬眠動物骨骼肌通過代謝重塑避免萎縮」：查新報告 15 篇和 README 都找不到出處。去《論文報告》的參考文獻裡找；找不到就改用「文獻」分頁建議的說法。","重要")
++chk("t-msg","統一簡介和實物不一致的口徑","HEPA、活性炭、吸附墊、塔式散熱器、37 項測試、XPS 無毒標準、24 小時監測、12L:12D 等，見「速查」分頁最下面。三個人說法要一樣。","重要")
++chk("t-power","拔一次電，驗證斷電恢復","自動模式開著 → 拔 12 V 和 ESP32 供電 → 插回 → 看網頁是否自動回到運行、TEC 有沒有真的通電。約 10 分鐘。試過才能說「驗證過」；海報上寫的是「待上機驗證」。","重要")
++chk("t-run","現機（有 XPS）手動 52% 跑 30–40 分鐘","巢穴 22°C 是沒裝 XPS 時（P2）測的。跑一次就有「現在這台機器」的數字，也補上 XPS 同風速對照。","可選")
++chk("t-log","Logbook 印出來（或存在平板），貼 5 個標籤","見「Logbook」分頁。LOGBOOK.md 最新一批修改還沒保存進 git，印之前先確認是最新版。","重要")
++chk("t-mock","模擬答辯一次","找同學扮評委：先聽 3 分鐘講解，再從「抽題練習」隨機問 10 題。被問倒的題記下來再練。")
++'</ul>'
++'<h2>當天要帶</h2><ul class="chk">'
++chk("b-proto","樣機 + 12 V 電源 + ESP32 USB 線 + 備用探頭線","","當天")
++chk("b-dev","手機或平板（連 ESP32-TEMP 打開儀表板）","演示前先連上，確認數據在跳。","當天")
++chk("b-backup","預先截好的降溫曲線、CSV 截圖或錄影","現場 WiFi 或樣機出問題時給評委看。08-01 那次 18.6 → 14.87°C 的曲線最重要。","當天")
++chk("b-paper","Logbook、作品簡介、查新報告和附件（39 頁）","評委問文獻時可以直接翻查新附件給他看原文節錄。","當天")
++'</ul>'
++'<h2>演示前 5 分鐘</h2><ul class="chk">'
++chk("d-dir","方向測試","打開 192.168.4.1/test?cool=255&amp;heat=0&amp;en=1，30 秒後摸冷端應變冷；測完回主頁按「停止系統」。")
++chk("d-probe","探頭測試","打開 192.168.4.1/diag，deviceCount 要是 3；輕晃三根探頭線，看溫度會不會跳成「斷線」或 85.00。")
++chk("d-auto","用自動模式","按「開啟系統」+ 目標溫度。不要按「製冷 / 加熱」小按鈕（手動模式沒有保護）。")
++chk("d-fan","風扇滑條手動設 52%","自動模式下風扇是 100%，要手動拖。")
++'</ul><div class="tools"><button id="todoReset">清除全部勾選</button></div>';
+
+PAGES.poster=''
++'<p class="lead">照海報的順序講，每段都用手指著那張圖。3 分鐘版是骨架，必須背熟；5 分鐘版是在每段後面加上灰底那句。講完主動說「我們的工程日誌記錄了每一次實驗，可以翻給您看」。</p>'
++'<div class="note"><p><b>分段建議</b>（名字自己填）：成員 A 講 ① ②，成員 B 講 ③ ④，成員 C 講 ⑤ ⑥。誰講哪段，就準備被追問那段。</p><p>海報上的實際排版如果順序不同，按海報的順序講。</p></div>'
++seg("① 為什麼做（研究動機）","約 30 秒","指著：研究背景圖",
+ "長期載人深空飛行，航天員長時間處於微重力，會出現<b>骨質流失</b>和<b>廢用性肌肉萎縮</b>。現在靠體能訓練、藥物、營養，但長期任務效果有限。一個未來方案是<b>人工蟄眠</b>：動物蟄眠時代謝很低，肌肉骨骼的損失更小。我們選<b>脂尾袋鼩</b>，因為牠是哺乳動物、每天自發蟄眠、不需要極端環境就能誘導。所以我們的核心問題是：<b>怎樣做一個適用於微重力蟄眠實驗的地面原型飼養籠？</b>",
+ "為什麼不選小鼠：小鼠要禁食加低溫才會進入蟄眠；脂尾袋鼩每天自發蟄眠，一次可以持續十幾個鐘頭（Ruf &amp; Geiser 2015）。蟄眠 5 小時能省 12–16% 的每日能量，超過 10 小時省 30–50%（Holloway &amp; Geiser 1995）。")
++seg("② 做什麼（工程目標 + 系統）","約 40 秒","指著：系統閉環流程圖",
+ "設計依照文獻的實驗流程：環境從 <b>24°C 降到 15°C</b>，維持 4 小時，再復溫喚醒（Lopatko 等 1999）。系統是一個閉環：三顆探頭分別量<b>巢穴、活動區、出風口</b>，BME680 量溫濕壓；ESP32 每輪讀數後判斷，超出死區就經 BTS7960 H 橋給 TEC 送電。<b>同一片 TEC，電流換個方向就從製冷變成加熱</b>，冷風或熱風從出風口送到活動區和巢穴，新的溫度再回到感測器。",
+ "為什麼不用壓縮機：體積大、會震動，而且不能加熱。另外三顆探頭分工：巢穴是控溫依據，出風口用來做過熱保護，活動區當環境參考。")
++seg("③ 有什麼特點（創新、科學、實用）","約 40 秒","指著：三大特點圖",
+ "<b>創新性</b>：選型和優化靠實測對比，不靠直覺；為無人值守設計五重保護（斷線、過熱、越界、看門狗、斷電恢復）；P1 到 P3 三代構型快速迭代。<b>科學性</b>：按論文流程設計目標溫度；CSV 全程記錄、可以回溯；41 項單元測試驗證控制和保護邏輯。<b>實用性</b>：樣機自己開 WiFi 熱點，不需要外網；手機平板電腦都能看；開源硬件加 3D 列印，成本低、可以複製。",
+ "和最接近的同類設備比：Farré 等 2024 年的開源鼠籠也用 TEC（12706），但目標是 18–32°C 的晝夜溫度循環；我們是為蟄眠的降溫—喚醒設計，對比後選了 12703，還分區測溫。查新比較了 15 項文獻，未檢出相同的原型。")
++seg("④ 怎樣一步步改進（探索過程）","約 50 秒","指著：迭代時間線 → 迭代改善柱狀圖",
+ "07-22 實測兩片 TEC：12706 功率是 12703 的兩倍，製冷反而略差，所以選了 12703，也看出<b>熱端散熱才是瓶頸</b>。07-24 連續製冷一小時，出風口只到 24.07°C，印證了這個判斷。08-01 在 TEC 熱面加一片 0.3 mm 銅片，冷面從 16–17°C 降到 5–6°C，出風口到 18.6°C。再把冷端風扇從 100% 降到 52%，出風口降到 <b>14.87°C</b>，接近目標 15°C：<b>風扇不是越快越好</b>，風太快，空氣來不及被冷卻就流走了。",
+ "08-22 加了 20 mm XPS 保溫，預期巢穴能降到 17–18°C，但那次測試條件混雜（風扇 100%、探頭有異常讀數），巢穴沒降。我們如實記錄，沒有拿來當成果。")
++seg("⑤ 數據說明了什麼","約 20 秒","指著：實驗結果曲線",
+ "左圖是巢穴、右圖是出風口相對起點降了多少。出風口一代比一代降得多，P2、P3 都降了 10°C 以上；但巢穴只降了幾度，P3 甚至沒降。<b>冷氣出得來，但沒有送到動物住的地方</b>，這是我們現在最大的問題。",
+ "出風口更冷，不等於送進箱子的總冷量更多：冷量大約是風量 × 溫差，風扇降速後風量也少了。所以下一步選風速要以巢穴溫度為準。")
++seg("⑥ 成果和下一步","約 20 秒","指著：工程目標 6 格",
+ "6 個目標裡 4 個已達成；「誘導、維持、甦醒」部分達成：出風口 14.9°C，巢穴仍約 22°C，差約 7°C；長期穩定性還要驗證。下一步：改善保溫和風路，把冷量送到巢穴；做風扇檔位掃描；通過倫理審批後才做動物實驗。這是<b>地面原型</b>，不是航天產品。<b>我們的工程日誌記錄了每一次實驗，可以翻給您看。</b>",
+ "最長連續實測約 63 分鐘，14.87°C 那組只測過一次，所以不說「24 小時」也不說「可重複」。")
++'<h2>講的時候</h2><ul class="risk">'
++'<li><b>數字只說海報上的。</b>14.9（或 14.87）、18.6、22、7、12703、52%、41 項。</li>'
++'<li><b>不要說：</b>「52% 是最優」「已經降到 15°C」「能誘導蟄眠」「首創」。</li>'
++'<li><b>被打斷就停。</b>評委插問是好事，答完問一句「我接著講結果可以嗎？」</li>'
++'<li><b>最後一句交給 Logbook。</b>把話題引到你們準備最充分的地方。</li></ul>';
+function seg(title,time,point,speak,more){
+  return '<div class="seg"><div class="hd"><b>'+title+'</b><span>'+time+'</span></div><p class="pt">'+point+'</p><p class="sp">'+speak+'</p>'+(more?'<p class="more"><b>5 分鐘版加：</b>'+more+'</p>':'')+'</div>';
+}
+
+function ref(n,who,src,says,use,must){
+  return '<div class="ref"><div class="who">'+(must?'<span class="pill">必記</span>':'')+(n?'<span class="pill c">文獻 '+n+'</span>':'')+who+'</div><p class="src">'+src+'</p><p>'+says+'</p><p class="use">用在哪：'+use+'</p></div>';
+}
+PAGES.refs=''
++'<p class="lead">文獻編號跟查新報告一致。評委問「依據是什麼」時，說出作者 + 年份 + 一句內容就夠了。標「必記」的 5 篇每人都要記住。</p>'
++'<div class="say"><small>被問「你們怎麼找文獻」</small><p>查新時用了 Google Scholar、PubMed、Google Patents、維普、萬方 5 個平台，17 個檢索式，最後比較了 15 項來源：11 篇論文、2 項專利、2 份官方技術資料。結論是在查閱範圍內，未檢出同樣面向脂尾袋鼩蟄眠、同樣配置的地面原型。</p></div>'
++'<div class="note"><p><b>兩句話目前找不到出處</b>（答辯卡和作品簡介都用了）：</p><p>1.「環境低於 18°C 時脂尾袋鼩蟄眠傾向顯著增加」<br>2.「冬眠動物的骨骼肌通過代謝重塑避免廢用性萎縮」（以及比目魚肌、慢縮肌纖維那段）</p><p>先去《論文報告》的參考文獻裡找作者和年份。找不到的話，第 1 句改說「同物種研究常在約 15°C 環境下觀察蟄眠（Wacker &amp; Geiser 2023），夏季的臨界環境溫度約 15°C（Geiser &amp; Baudinette 1987）」；第 2 句說「這是綜述層面的背景，我們引用的是 Ruf &amp; Geiser 2015 的蟄眠綜述」，不要編具體結論。</p></div>'
++'<h2>實驗流程和目標溫度（最常被問）</h2>'
++ref("","Lopatko 等 1999","Journal of Applied Physiology 86(6):1959–70（README 參考文獻）","脂尾袋鼩蟄眠實驗流程：艙內 24°C 降到 15°C 誘導蟄眠，維持 4 小時，再人為快速復溫回 24°C。動物自己甦醒時體溫回升 0.7–1.0°C/min。","海報「依論文流程設計 24 → 15°C 維持 4 h → 復溫」。被問「加熱太快會不會傷動物」：0.7–1.0 是動物自身體溫的速率，論文沒有規定箱子的加熱速率上限。",true)
++ref(12,"Wacker &amp; Geiser 2023","Physiological and Biochemical Zoology 96(6):393–404","把 300 mL 呼吸量測室放進恆溫櫃，環境 15.0 ± 0.7°C，用攝影機、耗氧量和皮下體溫研究脂尾袋鼩進入蟄眠的降溫過程。","證明 15°C 是同物種研究實際用的溫度；也說明現有研究用的是實驗室恆溫櫃，不是能帶上太空的飼養籠。",true)
++ref(4,"Geiser &amp; Baudinette 1987","Journal of Comparative Physiology B 157(3):335–344","脂尾袋鼩蟄眠最低體溫冬季 13.0°C、夏季 16.3°C；在 4–20°C 環境下觀察。臨界環境溫度夏季約 15°C、冬季約 11.5°C。","「為什麼目標是 15°C，不是更低」。")
++'<h2>為什麼選脂尾袋鼩、蟄眠有什麼用</h2>'
++ref(1,"Ruf &amp; Geiser 2015","Biological Reviews 90(3):891–926（綜述）","鳥類和哺乳動物每日蟄眠與冬眠的綜述。脂尾袋鼩最低蟄眠體溫 10.8°C，最長一次 19.5 小時，平均 15 小時。","「為什麼選這個動物」：每天都會蟄眠，而且一次很長。",true)
++ref(5,"Holloway &amp; Geiser 1995","Comparative Biochemistry and Physiology A 112(1):59–66","蟄眠約 5 小時，每日代謝率降 12–16%；超過 10 小時降 30–50%。","蟄眠的節能作用。<b>注意</b>：只讀過 PubMed 摘要，沒有全文，被問細節要如實說。")
++ref(6,"Hrvatin 等 2020","Nature 583:115–121","找到調控小鼠蟄眠的神經元，用化學遺傳學重新激活後，小鼠體溫和代謝下降。","「人工蟄眠是不是科幻」：已經有人在神經層面誘導蟄眠。")
++'<h2>太空動物飼養設備（說明我們了解現有設備）</h2>'
++ref(2,"Choi 等 2020（NASA）","Scientific Reports 10:2336","驗證 NASA 小鼠太空實驗系統，小鼠在微重力下生活 21–37 天；提供食水、照明、通風和影像檢查。","「太空裡已經有動物飼養箱了，你們有什麼不同」：它們溫控是維持常溫，不是為蟄眠降溫—喚醒設計。",true)
++ref(3,"Shiba 等 2017（JAXA MARS）","Scientific Reports 7:10837","離心機上的小鼠飼養單元，同時有微重力組和人工 1 g 組，飼養 35 天，比較骨骼和肌肉。","「為什麼需要對照組」：太空實驗要有只差重力的對照組；我們只有一台，是局限。")
++ref(8,"Shimbo 等 2016","Experimental Animals 65(2):175–187","JAXA 飼養籠的地面模型和普通籠子各養小鼠 32 天，體重、組織、基因表達都有差異。","「為什麼要先做地面原型」：飼養籠本身就會影響動物，上太空前要先在地面評估。")
++ref(9,"JAXA Mouse Habitat Unit","JAXA 官方設施資料（2025 年說明冊）","配置食水、可見光和紅外 LED、排泄物回收、雙風扇、夜視攝影機、溫度感測器。","我們的紅外攝影和風扇設計參考了這類配置。")
++ref(15,"張斌全等 2024","宇航學報 45(11):1849–1856","中國空間站夢天艙生物暴露裝置，用半導體製冷加加熱片，樣品區 5–20°C，對象是線蟲等微小動物。","「半導體製冷能不能上太空」：中國空間站已經在用。")
++'<h2>同類溫控設備（被問「別人做過嗎」）</h2>'
++ref(14,"Farré 等 2024","Frontiers in Physiology 15:1356787","低成本開源鼠籠，用 TEC1-12706 控溫，加微控制器、風扇換氣、可編程照明餵食，做 18–32°C 晝夜循環。","<b>最接近的競品。</b>差別：它是晝夜溫度循環，我們是蟄眠的降溫—喚醒；它直接用 12706，我們對比後選 12703；我們分巢穴、活動區、出風口測溫並分級保護。",true)
++ref(11,"Wu 等 2026","Functional Ecology 40(4):857–867","研究蝙蝠蟄眠，用約 70 L 的自製 Peltier 溫控櫃。","別人研究蟄眠也用 Peltier（就是 TEC），但體積大很多。")
++ref(13,"美國專利 US8291866B2","2012 年公告","寵物飼養空間的熱電加熱冷卻系統，含風道、風扇、散熱器、恆溫控制和遠程監測。","TEC 給動物籠控溫不是我們發明的；我們的新意在蟄眠用途和分區測溫、分級保護的組合。")
++ref(7,"中國實用新型 CN207612866U","2018 年公告","寵物飼養箱冷熱恆溫除異味空調：半導體製冷片、溫度傳感器、風機、鋁散熱器、活性炭濾芯。","同上。")
++'<h2>器件資料</h2>'
++ref(10,"Bosch BME688 Datasheet","Rev 1.3，2024","氣體通道給的是原始氣體電阻；IAQ、CO₂ 當量要靠 BSEC 演算法估算。","「你們能測 CO₂ 嗎」：不能，我們用的 BME680 只記錄原始氣體電阻，要真 ppm 得換 NDIR（例如 SCD40）。")
++ref("","DS18B20、TEC1-12703/12706 規格書、FireBeetle 2 ESP32-E 文件","README 參考文獻","探頭 12-bit 精度和 OneWire 時序；TEC 標稱 12 V、3 A / 6 A；ESP32 腳位和 strapping pin。","被問器件參數時用。");
+
+function bm(date,title,story,show){
+  return '<div class="seg"><div class="hd"><b>'+title+'</b><span>'+date+'</span></div><p class="sp">'+story+'</p><p class="more"><b>翻開時指著：</b>'+show+'</p></div>';
+}
+PAGES.log=''
++'<p class="lead">老師建議答辯時展示 Logbook。它最能證明「有根有據、有實驗探索」：每次都記了日期、條件、數據文件和結論，失敗的也記。</p>'
++'<div class="say"><small>什麼時候拿出來</small><p>評委問「你們怎麼做的」「遇過什麼困難」「怎麼知道是這個原因」時，不要只用嘴講，翻到對應那頁：「這是當天的記錄」。講解稿最後一句也引到這裡。</p></div>'
++'<div class="say"><small>一句話介紹</small><p>這是我們從 6 月到 11 月的工程日誌，每次實驗都記錄了日期、條件、原始數據文件和結論，一共 18 份實測數據。失敗的實驗我們也記了，例如加 XPS 以後巢穴沒有降。</p></div>'
++'<h2>貼 5 個標籤</h2>'
++bm("07-22","TEC 選型：直覺錯了","直覺是大片（12706）更冷。同一散熱器、同一起點（先加熱到 29–30°C）各測一次：12706 功率翻倍，製冷反而略差，加熱也更慢。結論：卡住的是熱端散熱，不是片子不夠大。","對比表：12703 降 4.6°C / 12706 降 4.2°C，功耗 36 W vs 72 W")
++bm("07-24","一小時長測：找到瓶頸","第一次連續製冷 63 分鐘，出風口最低只到 24.07°C，離 15°C 很遠。印證了 07-22 的判斷：熱端散熱不夠。","24.07°C 這個數字，和「熱端是瓶頸」這句結論")
++bm("08-01","銅片 + 風扇降速：最大的發現","熱端加 0.3 mm 銅片，冷面 16–17 → 5–6°C。冷端風扇 100% 時出風口卡在 18.6°C，降到 52% 後 23 分鐘內到 14.87°C。風扇不是越快越好。（降速是聽了建議才去試的，被問要如實說。）","18.6 → 14.87°C 的數據和原始 CSV 文件名")
++bm("08-22 ~ 08-26","XPS 保溫：沒達到預期，如實記錄","預期巢穴降到 17–18°C，實測沒降。但這次風扇是 100%、有探頭異常讀數，條件太亂，不能說 XPS 沒用，所以列為待做的對照實驗。","「條件太亂，不能拿來說 XPS 沒用」那段：體現實驗態度")
++bm("07-22 / 11-02","故障診斷：腳位和方向","07-22 數據腳來回改了四次，原因是板上印的 D 編號和 GPIO 對不上；11-02 發現製冷和加熱方向反了，查出來後對調再上機確認。","說明問題是靠數據發現、再驗證解決的")
++'<h2>Logbook 末尾還有</h2><ul class="risk" style="background:var(--cold-soft)">'
++'<li><b>主要決定</b>表：每個決定是什麼、為什麼。被問「為什麼這樣設計」時翻這裡。</li>'
++'<li><b>保護機制</b>表：五重保護分別怎樣觸發。</li>'
++'<li><b>原始數據總表</b>：18 份 CSV 的日期和條件。被問「數據在哪」時翻這裡。</li>'
++'<li><b>目前的問題 / 待辦</b>：主動承認局限 + 下一步。</li></ul>'
++'<div class="note"><p><b>帶之前</b>：LOGBOOK.md 有一批修改還沒保存進 git，先確認印的是最新版。印的時候保留目錄頁。</p></div>';
+
+var TKEY="defense-todo-v1";
+function bindTodo(){
+  var st={};try{st=JSON.parse(localStorage.getItem(TKEY)||"{}")}catch(e){}
+  var boxes=view.querySelectorAll('.chk input');
+  boxes.forEach(function(b){
+    b.checked=!!st[b.getAttribute("data-k")];
+    b.onchange=function(){if(b.checked)st[b.getAttribute("data-k")]=1;else delete st[b.getAttribute("data-k")];try{localStorage.setItem(TKEY,JSON.stringify(st))}catch(e){}};
+  });
+  document.getElementById("todoReset").onclick=function(){st={};try{localStorage.removeItem(TKEY)}catch(e){};boxes.forEach(function(b){b.checked=false})};
+}
+
+/* 「已掌握」按題目文字記，題目增刪後進度不會錯位 */
+var KEY="defense-cards-v4", mastered={};
+CARDS.forEach(function(c){c.id=c.q});
+try{mastered=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){mastered={}}
+try{
+  var old=localStorage.getItem("defense-cards-v3");
+  if(old&&!localStorage.getItem(KEY)){
+    var o=JSON.parse(old);Object.keys(o).forEach(function(k){if(CARDS[+k])mastered[CARDS[+k].id]=1});
+  }
+}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(mastered))}catch(e){}}
+var BYID={};CARDS.forEach(function(c){BYID[c.id]=c});
+var view=document.getElementById("view"), tabs=document.getElementById("tabs");
+var cur="cheat";
+try{var h=(location.hash||"").slice(1); if(CATS.some(function(x){return x.id===h}))cur=h}catch(e){}
+
+function count(cat){return CARDS.filter(function(c){return c.c===cat}).length}
+function drawTabs(){
+  tabs.innerHTML="";
+  var sel=null;
+  CATS.forEach(function(k){
+    var b=document.createElement("button");
+    b.setAttribute("role","tab"); b.setAttribute("aria-selected",k.id===cur);
+    var n=count(k.id);
+    b.innerHTML=k.name+(n?'<span class="n">'+n+'</span>':'');
+    b.onclick=function(){cur=k.id;try{history.replaceState(null,"","#"+cur)}catch(e){};render();window.scrollTo(0,0)};
+    tabs.appendChild(b);
+    if(k.id===cur)sel=b;
+  });
+  /* 手機上把目前分頁捲到可見位置 */
+  if(sel&&tabs.scrollWidth>tabs.clientWidth)tabs.scrollLeft=sel.offsetLeft-tabs.offsetLeft-16;
+}
+function progress(){
+  var d=CARDS.filter(function(c){return mastered[c.id]}).length;
+  document.getElementById("prog").textContent=d+" / "+CARDS.length+" 已掌握";
+  document.getElementById("barfill").style.width=(100*d/CARDS.length)+"%";
+}
+function cardEl(c){
+  var d=document.createElement("div"); d.className="card"+(mastered[c.id]?" done":"");
+  var id="a"+CARDS.indexOf(c);
+  d.innerHTML='<button class="qbtn" aria-expanded="false" aria-controls="'+id+'"><span class="tag'+(c.c==="hard"?" hard":"")+'">'+TAGS[c.c]+'</span><span class="qt"></span><span class="chev" aria-hidden="true">›</span></button>'
+   +'<div class="ans" id="'+id+'" hidden>'+c.a+'</div>'
+   +'<div class="foot"><button class="mark" aria-pressed="'+!!mastered[c.id]+'">'+(mastered[c.id]?"已掌握":"標為已掌握")+'</button></div>';
+  d.querySelector(".qt").textContent=c.q;
+  var q=d.querySelector(".qbtn"), a=d.querySelector(".ans"), m=d.querySelector(".mark");
+  q.onclick=function(){var o=q.getAttribute("aria-expanded")==="true";q.setAttribute("aria-expanded",!o);a.hidden=o};
+  m.onclick=function(){
+    if(mastered[c.id])delete mastered[c.id]; else mastered[c.id]=1;
+    save();m.setAttribute("aria-pressed",!!mastered[c.id]);m.textContent=mastered[c.id]?"已掌握":"標為已掌握";
+    d.classList.toggle("done",!!mastered[c.id]);progress();
+  };
+  return d;
+}
+var intro={
+ use:"先用專業說法講，講完馬上用一句白話解釋：懂行的評委聽得出你懂，不是理科的評委也聽得懂。",
+ concept:"最可能被問。先講專業定義，再用白話解釋一句。",
+ project:"評委指著實物、曲線、數字問的具體題。答案裡都有日期和數字，背熟數字。",
+ judge:"比賽常見題型，但問法換成針對你們項目的具體問題。",
+ hard:"準備一兩題就夠，核心是不硬撐：承認局限，給出下一步。",
+ extra:"倫理、選型思路、太空載荷背景。"
+};
+function renderList(cat){
+  view.innerHTML='<p class="lead">'+intro[cat]+' 點題目看答案。</p>'
+   +'<div class="tools"><button id="ex">全部展開</button><button id="co">全部收起</button></div><div id="list"></div>';
+  var list=document.getElementById("list");
+  CARDS.filter(function(c){return c.c===cat}).forEach(function(c){list.appendChild(cardEl(c))});
+  function all(open){list.querySelectorAll(".qbtn").forEach(function(q){q.setAttribute("aria-expanded",open);q.parentNode.querySelector(".ans").hidden=!open})}
+  document.getElementById("ex").onclick=function(){all(true)};
+  document.getElementById("co").onclick=function(){all(false)};
+}
+/* 抽題：範圍（題型）→ 按固定順序切成幾個部分 → 每次只練一部分；做到哪裡存在本機，下次打開接著做 */
+var QKEY="defense-quiz-v1";
+var qpool=[], qi=0, qshow=false, qonly="all", qpart=0, qsize=8, qredo=false;
+function scope(){return CARDS.filter(function(c){return qonly==="all"||c.c===qonly})}
+function partCount(){return Math.max(1,Math.ceil(scope().length/qsize))}
+function partCards(k){return scope().slice(k*qsize,(k+1)*qsize)}
+function saveQuiz(){
+  try{localStorage.setItem(QKEY,JSON.stringify({only:qonly,part:qpart,size:qsize,redo:qredo,pool:qpool.map(function(c){return c.id}),qi:qi}))}catch(e){}
+}
+function loadQuiz(){
+  try{
+    var s=JSON.parse(localStorage.getItem(QKEY)||"null"); if(!s)return false;
+    qonly=s.only||"all";qsize=s.size||8;qpart=s.part||0;qredo=!!s.redo;
+    if(qpart>=partCount())qpart=0;
+    qpool=(s.pool||[]).map(function(id){return BYID[id]}).filter(Boolean);
+    qi=Math.min(s.qi||0,qpool.length);qshow=false;
+    return true;
+  }catch(e){return false}
+}
+function buildPool(){
+  qpool=partCards(qpart).filter(function(c){return qredo||!mastered[c.id]});
+  for(var i=qpool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=qpool[i];qpool[i]=qpool[j];qpool[j]=t}
+  qi=0;qshow=false;saveQuiz();
+}
+function rate(n){
+  var c=qpool[qi]; if(!c)return;
+  if(n===3){mastered[c.id]=1;save();progress()}
+  else if(n===2){qpool.push(c)}
+  else{qpool.splice(Math.min(qi+4,qpool.length),0,c)}
+  qi++;qshow=false;saveQuiz();renderQuiz();
+}
+function quizTools(){
+  var sel='font:inherit;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink)';
+  var opts='<option value="all">全部題型</option>'+["use","concept","project","judge","hard","extra"].map(function(k){
+    return '<option value="'+k+'"'+(qonly===k?" selected":"")+'>'+CATS.filter(function(x){return x.id===k})[0].name+'</option>'}).join("");
+  var parts="";
+  for(var k=0;k<partCount();k++){
+    var pc=partCards(k), d=pc.filter(function(c){return mastered[c.id]}).length;
+    parts+='<option value="'+k+'"'+(qpart===k?" selected":"")+'>第 '+(k+1)+' 部分（'+d+'/'+pc.length+' 已掌握）</option>';
+  }
+  var sizes=[5,8,10,15].map(function(n){return '<option value="'+n+'"'+(qsize===n?" selected":"")+'>每部分 '+n+' 題</option>'}).join("");
+  return '<div class="tools"><select id="sel" aria-label="題型" style="'+sel+'">'+opts+'</select>'
+   +'<select id="part" aria-label="部分" style="'+sel+'">'+parts+'</select>'
+   +'<select id="size" aria-label="每部分題數" style="'+sel+'">'+sizes+'</select></div>';
+}
+function bindTools(){
+  document.getElementById("sel").onchange=function(e){qonly=e.target.value;qpart=0;qredo=false;buildPool();renderQuiz()};
+  document.getElementById("part").onchange=function(e){qpart=+e.target.value;qredo=false;buildPool();renderQuiz()};
+  document.getElementById("size").onchange=function(e){qsize=+e.target.value;qpart=0;qredo=false;buildPool();renderQuiz()};
+}
+document.addEventListener("keydown",function(e){
+  if(cur!=="quiz"||!qpool[qi])return;
+  if(e.key===" "&&e.target===document.body&&!qshow){e.preventDefault();qshow=true;renderQuiz()}
+  else if(qshow&&"123".indexOf(e.key)>-1&&e.target.tagName!=="SELECT"){rate(+e.key)}
+});
+function renderQuiz(){
+  if(!qpool.length||qi>=qpool.length){
+    var last=qpart>=partCount()-1;
+    view.innerHTML='<p class="lead">每次練一個部分，只抽還沒掌握的題；做到哪裡會自動記住。</p>'+quizTools()
+     +'<div class="empty">'+(qpool.length?"第 "+(qpart+1)+" 部分這一輪做完了。":"第 "+(qpart+1)+" 部分的題都掌握了。")+'</div>'
+     +'<div class="row">'+(last?'':'<button class="btn" id="next">下一部分</button>')
+     +'<button class="btn ghost" id="again">這部分再練一輪</button><button class="btn ghost" id="redo">連已掌握的也重練</button></div>';
+    if(!last)document.getElementById("next").onclick=function(){qpart++;qredo=false;buildPool();renderQuiz()};
+    document.getElementById("again").onclick=function(){qredo=false;buildPool();renderQuiz()};
+    document.getElementById("redo").onclick=function(){qredo=true;buildPool();renderQuiz()};
+    bindTools();
+    return;
+  }
+  var c=qpool[qi];
+  view.innerHTML='<p class="lead">每次練一個部分，只抽還沒掌握的題；做到哪裡會自動記住，下次打開接著做。先自己開口說一遍（30 秒內），再看答案。電腦上：空格看答案，1 / 2 / 3 評分。「不會」的題幾題後再出現。</p>'
+   +quizTools()
+   +'<div class="quiz"><div class="meta">'+TAGS[c.c]+' · 第 '+(qpart+1)+' 部分 · 第 '+(qi+1)+' / '+qpool.length+' 題</div><p class="q" id="qq"></p>'
+   +(qshow?'<div class="ans">'+c.a+'</div><div class="row"><button class="btn bad" id="nope">不會<kbd>1</kbd></button><button class="btn ghost" id="fuzzy">模糊<kbd>2</kbd></button><button class="btn ok" id="got">記住了<kbd>3</kbd></button></div>'
+          :'<div class="row"><button class="btn" id="show">看答案</button><button class="btn ghost" id="skip">跳過</button></div>')
+   +'</div>';
+  document.getElementById("qq").textContent=c.q;
+  bindTools();
+  if(qshow){
+    document.getElementById("got").onclick=function(){rate(3)};
+    document.getElementById("fuzzy").onclick=function(){rate(2)};
+    document.getElementById("nope").onclick=function(){rate(1)};
+  }else{
+    document.getElementById("show").onclick=function(){qshow=true;renderQuiz()};
+    document.getElementById("skip").onclick=function(){qi++;saveQuiz();renderQuiz()};
+  }
+}
+var quizReady=false;
+function render(){
+  drawTabs();progress();
+  if(cur==="cheat")view.innerHTML=cheat;
+  else if(PAGES[cur]){view.innerHTML=PAGES[cur];if(cur==="todo")bindTodo()}
+  else if(cur==="quiz"){
+    if(!quizReady){quizReady=true;if(!loadQuiz())buildPool()}
+    renderQuiz();
+  }
+  else renderList(cur);
+}
+render();
+</script>
